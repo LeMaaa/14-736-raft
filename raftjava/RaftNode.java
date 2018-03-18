@@ -97,8 +97,9 @@ public class RaftNode implements MessageHandling {
             this.state.setCurrentTerm(appendEntriesArg.getTerm());
             this.state.setVotedFor(appendEntriesArg.getLeaderId());
             this.type = Types.FOLLOWER;
-            resetElectionTimeout();
         }
+
+        resetElectionTimeout();
 
         // consistency check;
 
@@ -130,12 +131,8 @@ public class RaftNode implements MessageHandling {
         }
     }
 
-
-
-
     public void startElectionProcess() throws RemoteException {
         Timer timer = new Timer();
-
         timer.scheduleAtFixedRate(new TimerTask() {
 
             public void run() {
@@ -161,8 +158,8 @@ public class RaftNode implements MessageHandling {
 
         int votes = 1;
 
-        int lastIndex = lastEntry.getIndex();
-        int lastTerm = lastEntry.getTerm();
+        int lastIndex = state.getLog().lastEntryIndex();
+        int lastTerm = state.getLog().getEntry(lastIndex).getTerm();
 
         RequestVoteArgs ra = new RequestVoteArgs(this.state.getCurrentTerm(), this.id, lastIndex, lastTerm);
         byte[] data = SerializationUtils.serialize(ra);
@@ -170,7 +167,6 @@ public class RaftNode implements MessageHandling {
         if(num_peers > 1) {
             for(int i = 0; i < this.num_peers; i++) {
                 if(i == id) continue;
-
                 Message msg = new Message(MessageType.RequestVoteArgs, id, i ,data);
                 Message cur = lib.sendMessage(msg);
                 RequestVoteReply reply = (RequestVoteReply) SerializationUtils.deserialize(cur.getBody());
@@ -178,32 +174,22 @@ public class RaftNode implements MessageHandling {
                 if (reply.getTerm() > this.state.getCurrentTerm()) {
                     this.toFollower(reply.getTerm(), i);
                     break;
-                }else {
+                }else if(reply.getTerm() == this.state.getCurrentTerm() ){
                     if(reply.isVoteGranted()) {
                         votes++;
                     }
                     if(votes > num_peers/2) {
                         if(this.type == Types.CANDIDATE && ra.getTerm() == this.state.getCurrentTerm()) {
-                            // change to leader;
-
-                            this.toFollower(reply.getTerm(), i);
-                            this.leaderID = id;
-
-                            // to do
+                            toLeader();
                         }else {
                             break;
                         }
                     }
                 }
             }
-
         }else {
             this.toLeader();
         }
-
-
-
-
     }
 
     public void toCandidate() {
@@ -231,10 +217,10 @@ public class RaftNode implements MessageHandling {
         for (int i = 1; i <= num_peers; i++) {
             matchIndex.add(i,0);
             nextIndex.add(i, firstIndexOfTerm);
-
             assert nextIndex.get(i) != 0;
         }
-        
+
+        broadcastTo();
     }
 
     public void toFollower(int term, int leaderId) {
@@ -244,13 +230,6 @@ public class RaftNode implements MessageHandling {
 
         System.out.println("To Follower Status");
     }
-
-
-    public void AppayChannel(ApplyMsg msg) {
-
-    }
-
-
 
     public synchronized void sendAppendEntriesRequest(int serverId) throws RemoteException{
         if(type != Types.LEADER) return;
@@ -267,7 +246,6 @@ public class RaftNode implements MessageHandling {
 
         AppendEntriesReply res = (AppendEntriesReply) SerializationUtils.deserialize(re.getBody());
 
-
         if(res.getTerm() > state.getCurrentTerm()) {
             toFollower(res.getTerm(), serverId);
         } else {
@@ -280,7 +258,6 @@ public class RaftNode implements MessageHandling {
                 }
             }else {
                 // fail because of log inconsistency, then decrement nextIndex and retry
-
                 if (nextIndex.get(serverId) > state.getLog().lastEntryIndex()) {
                     nextIndex.set(serverId,Math.max(state.getLog().lastEntryIndex() + 1, 1));
                 } else if (nextIndex.get(serverId) > 1) {
@@ -288,9 +265,7 @@ public class RaftNode implements MessageHandling {
                 }
             }
         }
-
         commitEntry();
-
     }
 
 
@@ -316,6 +291,7 @@ public class RaftNode implements MessageHandling {
             ApplyMsg msg = new ApplyMsg(id, i, state.getLog().getEntry(i).getCommand(), false, null);
             lib.applyChannel(msg);
         }
+        lastApplied = commitIndex;
     }
 
     public synchronized boolean isCommittable(int index) {
@@ -330,10 +306,6 @@ public class RaftNode implements MessageHandling {
         }
         return cnt >= majority;
     }
-
-
-
-
 
     @Override
     public StartReply start(int command) {
@@ -363,12 +335,8 @@ public class RaftNode implements MessageHandling {
             }catch (Exception e) {
                 e.printStackTrace();
             }
-
         }
-
-        // append to all servers
-
-        StartReply sr = new StartReply(index, term, true);
+        StartReply sr = new StartReply(state.getLog().lastEntryIndex(), term, true);
         return sr;
     }
 
