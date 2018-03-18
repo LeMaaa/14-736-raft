@@ -68,7 +68,7 @@ public class RaftNode implements MessageHandling {
 
         if(requestVoteArgs.getTerm() > state.getCurrentTerm()) {
             if(this.type != Types.FOLLOWER) {
-                this.toFollower(requestVoteArgs.getTerm());
+                this.toFollower(requestVoteArgs.getTerm(), requestVoteArgs.getCandidateId());
             }
         }
 
@@ -176,7 +176,7 @@ public class RaftNode implements MessageHandling {
                 RequestVoteReply reply = (RequestVoteReply) SerializationUtils.deserialize(cur.getBody());
 
                 if (reply.getTerm() > this.state.getCurrentTerm()) {
-                    this.toFollower(reply.getTerm());
+                    this.toFollower(reply.getTerm(), i);
                     break;
                 }else {
                     if(reply.isVoteGranted()) {
@@ -186,7 +186,7 @@ public class RaftNode implements MessageHandling {
                         if(this.type == Types.CANDIDATE && ra.getTerm() == this.state.getCurrentTerm()) {
                             // change to leader;
 
-                            this.toFollower(reply.getTerm());
+                            this.toFollower(reply.getTerm(), i);
                             this.leaderID = id;
 
                             // to do
@@ -237,10 +237,10 @@ public class RaftNode implements MessageHandling {
         
     }
 
-    public void toFollower(int term) {
+    public void toFollower(int term, int leaderId) {
         this.type = Types.FOLLOWER;
         this.state.setCurrentTerm(term);
-        this.state.setVotedFor(-1);
+        this.state.setVotedFor(leaderId);
 
         System.out.println("To Follower Status");
     }
@@ -267,30 +267,68 @@ public class RaftNode implements MessageHandling {
 
         AppendEntriesReply res = (AppendEntriesReply) SerializationUtils.deserialize(re.getBody());
 
+
         if(res.getTerm() > state.getCurrentTerm()) {
-            toFollower(res.getTerm());
+            toFollower(res.getTerm(), serverId);
+        } else {
+            if(res.isSuccess()) {
+                if (entries == null || entries.size() == 0) {
+                    nextIndex.set(serverId,  Math.max(state.getLog().lastEntryIndex() + 1, 1));
+                }else {
+                    matchIndex.set(serverId, state.getLog().lastEntryIndex());
+                    nextIndex.set(serverId, matchIndex.get(serverId) + 1);
+                }
+            }else {
+                // fail because of log inconsistency, then decrement nextIndex and retry
+
+                if (nextIndex.get(serverId) > state.getLog().lastEntryIndex()) {
+                    nextIndex.set(serverId,Math.max(state.getLog().lastEntryIndex() + 1, 1));
+                } else if (nextIndex.get(serverId) > 1) {
+                    nextIndex.set(serverId, nextIndex.get(serverId) - 1);
+                }
+            }
+        }
+
+        commitEntry();
+
+    }
+
+
+    public synchronized void commitEntry() throws RemoteException {
+        if(type != Types.LEADER) return;
+        if(!isCommittable(firstIndexOfTerm)) return;
+        ArrayList<Integer> copy = new ArrayList<>(matchIndex);
+        Collections.sort(copy);
+
+        int newCommitIndex = copy.get(num_peers/2);
+
+        if (state.getLog().getEntry(newCommitIndex).getTerm() != state.getCurrentTerm()) {
+            return;
+        }
+        if (commitIndex >= newCommitIndex) {
             return;
         }
 
-        if(res.isSuccess()) {
-            if (entries == null || entries.size() == 0) {
-                nextIndex.set(serverId,  Math.max(state.getLog().lastEntryIndex() + 1, 1));
-            }else {
-                matchIndex.set(serverId, state.getLog().lastEntryIndex());
-                nextIndex.set(serverId, matchIndex.get(serverId) + 1);
-            }
-        }else {
-            // fail because of log inconsistency, then decrement nextIndex and retry
+        int preCommitIndex = commitIndex;
+        commitIndex = newCommitIndex;
 
-            if (nextIndex.get(serverId) > state.getLog().lastEntryIndex()) {
-                nextIndex.set(serverId,Math.max(state.getLog().lastEntryIndex() + 1, 1));
-            } else if (nextIndex.get(serverId) > 1) {
-                nextIndex.set(serverId, nextIndex.get(serverId) - 1);
-            }
-
+        for(int i = preCommitIndex + 1; i <= commitIndex; i++) {
+            ApplyMsg msg = new ApplyMsg(id, i, state.getLog().getEntry(i).getCommand(), false, null);
+            lib.applyChannel(msg);
         }
+    }
 
+    public synchronized boolean isCommittable(int index) {
+        int majority = 1 + num_peers/2;
+        int cnt = 0;
 
+        for(int i = 0; i < num_peers; i++) {
+            if(matchIndex.get(i) >= index) {
+                cnt++;
+            }
+            if(cnt >= majority) return true;
+        }
+        return cnt >= majority;
     }
 
 
@@ -301,9 +339,9 @@ public class RaftNode implements MessageHandling {
     public StartReply start(int command) {
         int term = this.state.getCurrentTerm();
         int index = -1;
-        boolean isleader = this.type == Types.LEADER;
+        boolean isLeader = this.type == Types.LEADER;
 
-        if(!isleader) {
+        if(!isLeader) {
             return new StartReply(index, term, false);
         }
 
@@ -317,7 +355,6 @@ public class RaftNode implements MessageHandling {
         index = this.state.getLog().lastEntryIndex() + 1;
         LogEntries entry = new LogEntries(term, index, command);
         this.state.getLog().append(entry);
-        byte[] data = SerializationUtils.serialize(entry);
 
         for(int i = 0; i < num_peers; i++) {
             if(i == id) continue;
