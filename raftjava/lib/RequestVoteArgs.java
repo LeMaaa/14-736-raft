@@ -14,6 +14,9 @@ public class RequestVoteArgs implements Serializable{
     private int lastLogIndex;
     private int lastLogTerm;
 
+    private static final long serialVersionUID = 2L;
+
+
     public RequestVoteArgs(int term, int candidateId, int lastLogIndex, int lastLogTerm) {
         this.term = term;
         this.candidateId = candidateId;

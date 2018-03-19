@@ -10,7 +10,8 @@ public class LogEntries implements Serializable{
     private int term;
     private int index;
     private int command;
-
+    private static final long serialVersionUID = 1L;
+    
     public LogEntries(int term, int index, int command) {
         this.term = term;
         this.index = index;

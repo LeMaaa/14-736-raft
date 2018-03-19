@@ -14,6 +14,9 @@ public class AppendEntriesArg implements Serializable {
     private ArrayList<LogEntries> entries;
     private int leaderCommit;
 
+    private static final long serialVersionUID = 3L;
+
+
 
     public AppendEntriesArg(int term, int leaderId, int prevLogIndex, int prevLogTerm, ArrayList<LogEntries> en, int leaderCommit) {
         this.term = term;

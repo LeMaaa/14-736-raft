@@ -68,7 +68,7 @@ public class Log {
         if (entry.getIndex() <= lastIndex) {
             //assert entry.index >= commitIndex : entry.index + " >= " + commitIndex;
             if (entry.getTerm() != logs.get(entry.getIndex()).getTerm()) {
-                deleteConflictingEntries(entry.getIndex();
+                deleteConflictingEntries(entry.getIndex());
             } else {
                 return true; // we already have this entry
             }

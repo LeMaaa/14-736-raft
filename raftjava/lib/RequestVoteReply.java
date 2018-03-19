@@ -11,6 +11,8 @@ public class RequestVoteReply implements Serializable{
 
     private int term;
     private boolean voteGranted;
+    private static final long serialVersionUID = 3L;
+
 
     public RequestVoteReply(int term, boolean voteGranted) {
         this.term = term;
