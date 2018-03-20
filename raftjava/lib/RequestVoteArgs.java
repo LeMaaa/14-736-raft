@@ -8,7 +8,8 @@ import java.io.Serializable;
  * Message to be sent.
  *
  */
-public class RequestVoteArgs implements Serializable{
+public class RequestVoteArgs implements Serializable {
+    static final long serialVersionUID = 42L;
     private int term;
     private int candidateId;
     private int lastLogIndex;

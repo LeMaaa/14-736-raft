@@ -6,7 +6,7 @@ import java.io.Serializable;
 import java.util.*;
 
 public class AppendEntriesArg implements Serializable {
-
+    static final long serialVersionUID = 42L;
     private int term;
     private int leaderId;
     private int prevLogIndex;

@@ -8,7 +8,7 @@ import java.io.Serializable;
  *
  */
 public class RequestVoteReply implements Serializable{
-
+    static final long serialVersionUID = 42L;
     private int term;
     private boolean voteGranted;
     private static final long serialVersionUID = 3L;

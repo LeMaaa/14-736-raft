@@ -6,7 +6,7 @@ package lib;
 import java.io.Serializable;
 
 public class LogEntries implements Serializable{
-
+    static final long serialVersionUID = 42L;
     private int term;
     private int index;
     private int command;

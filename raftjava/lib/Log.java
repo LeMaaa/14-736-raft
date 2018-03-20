@@ -21,39 +21,39 @@ public class Log {
         lastApplied = -1;
     }
 
-    public void setCommitIndex(int val) {this.commitIndex = val;}
-    public void setLastApplied(int val) {this.lastApplied = val;}
-    public int getCommitIndex() {return commitIndex;}
-    public int getLastApplied() {return lastApplied;}
+    public synchronized void setCommitIndex(int val) {this.commitIndex = val;}
+    public synchronized void setLastApplied(int val) {this.lastApplied = val;}
+    public synchronized int getCommitIndex() {return commitIndex;}
+    public synchronized int getLastApplied() {return lastApplied;}
 
 
     // returns the last log index
-    public int lastEntryIndex() {
+    public synchronized int lastEntryIndex() {
         return this.lastIndex;
     }
 
     // returns the last log term or -1 if null
-    public int lastEntryTerm() {
+    public synchronized int lastEntryTerm() {
         if (this.lastEntryIndex() > 0) {
             return this.logs.get(lastIndex).getTerm();
         } else return -1;
     }
 
-    public int getTermAtIndex(int index) {
+    public synchronized int getTermAtIndex(int index) {
         if (this.lastEntryIndex() <= index) {
-            LogEntries l = (LogEntries) this.logs.get(index);
+            LogEntries l = this.logs.get(index);
             return l.getTerm();
         } else return -1;
     }
 
     // updates committed index
-    public void updateCommitIndex(int index) {
+    public synchronized void updateCommitIndex(int index) {
         if (index > this.commitIndex) {
             this.commitIndex = (index < this.lastEntryIndex()? index : this.lastEntryIndex());
         }
     }
 
-    public void deleteConflictingEntries(int index) {
+    public synchronized void deleteConflictingEntries(int index) {
         if(index < commitIndex) return;
         while(index <= lastIndex) {
             this.logs.remove(lastIndex);
@@ -84,12 +84,13 @@ public class Log {
     }
 
 
-    public LogEntries getEntry(int index) {
-        if(index < 0 || index > lastEntryIndex()) return null;
+    public synchronized LogEntries getEntry(int index) {
+        if(logs == null || logs.size() == 0) return null;
+        if(index < 0 || index >= lastEntryIndex()) return null;
         return logs.get(index);
     }
 
-    public ArrayList<LogEntries> getEntryFrom(int index) {
+    public synchronized ArrayList<LogEntries> getEntryFrom(int index) {
         if(index < 0 || index > lastEntryIndex()) return null;
         ArrayList<LogEntries> res = new ArrayList<>();
         for(int i = index; i <= lastEntryIndex(); i++) {
@@ -98,8 +99,9 @@ public class Log {
         return res;
     }
 
-
-
-
-
+    public synchronized int getLastTerm() {
+        System.out.print("Current index:" + this.lastEntryIndex());
+        if(lastEntryIndex() <= 0) return 0;
+        return getEntry(lastIndex).getTerm();
+    }
 }
