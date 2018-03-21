@@ -14,6 +14,7 @@ public class RaftTest {
 
     private static void TestInitialElection() throws Exception {
 
+        System.out.println( "Trying to test initial election...");
         int term1, term2;
         int numServers = 3;
 

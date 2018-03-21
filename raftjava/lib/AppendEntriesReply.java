@@ -10,7 +10,6 @@ public class AppendEntriesReply implements Serializable {
     static final long serialVersionUID = 42L;
     private int term;
     private boolean success;
-    private static final long serialVersionUID = 4L;
 
 
     public AppendEntriesReply(int term, boolean success) {

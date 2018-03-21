@@ -35,6 +35,7 @@ public class RaftNode implements MessageHandling {
 
     private void resetElectionTimeout(){
         electionTimeout = T + System.currentTimeMillis() + T + random.nextInt(electionTimeoutMills);
+
     }
 
     public int getPort() {return this.port;}
@@ -53,13 +54,18 @@ public class RaftNode implements MessageHandling {
         nextIndex = new ArrayList<>();
         matchIndex = new ArrayList<>();
         try {
+            // set election timeout before launching periodic tasks
+            resetElectionTimeout();
             launchPeriodicTasksThread();
-        }catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
+
+        System.out.println("RaftNode created!");
     }
 
 
+    // respond to vote request from peers
     public synchronized RequestVoteReply requestVote(RequestVoteArgs requestVoteArgs) {
         if(requestVoteArgs.getTerm() < state.getCurrentTerm()) {
             return new RequestVoteReply(state.getCurrentTerm(), false);
@@ -88,6 +94,7 @@ public class RaftNode implements MessageHandling {
 
 
     // send appendEntriesRequest Handler
+    // reply to hearbeats and log entries
     public synchronized AppendEntriesReply AppendEntries(AppendEntriesArg appendEntriesArg) {
         if(appendEntriesArg.getTerm() < state.getCurrentTerm()) {
             return new AppendEntriesReply(state.getCurrentTerm(), false);
@@ -133,11 +140,17 @@ public class RaftNode implements MessageHandling {
     }
 
 
+
+    // run periodic task: election and hearbeat
+    // election will only be run if there is no leader in the cluster
+    // or when the leader doesn't respond
     private void launchPeriodicTasksThread() {
         final Thread t = new Thread(() -> {
                 try {
-                    runPeriodicTasks();
-                    Thread.sleep(10);
+                    while(true) {
+                        runPeriodicTasks();
+                        Thread.sleep(100);
+                    }
                 } catch (Throwable e) {
                    e.printStackTrace();
                 }
@@ -147,14 +160,17 @@ public class RaftNode implements MessageHandling {
     }
 
 
+    // periodic task, for now just choose new leader
     private synchronized void runPeriodicTasks() throws Exception {
-        if(type == Types.LEADER) {
-            broadcastTo();
-        }else if(type == Types.CANDIDATE) {
+        // If currently we have no leader
+        if (this.leaderID == -1) {
+            System.out.println("Current we have no leader, so let's start election.");
+            // select a leader
+
             if(System.currentTimeMillis() > electionTimeout) {
                 startElection();
             }
-        }
+        } 
     }
 
 
@@ -178,14 +194,16 @@ public class RaftNode implements MessageHandling {
         }, 0, 100);
     }
 
+    // rewrite the start election logic
+
     public synchronized void startElection() throws RemoteException, IOException, ClassNotFoundException {
+
+        System.out.println("Starting election...");
 
         // transition to candidate
         this.toCandidate();
 
         int votes = 1;
-
-        System.out.println("aaaaaaaa");
 
         int lastIndex = state.getLog().lastEntryIndex();
         System.out.println(lastIndex);
@@ -217,7 +235,7 @@ public class RaftNode implements MessageHandling {
                     }
                 }
             }
-        }else {
+        } else {
             this.toLeader();
         }
     }
@@ -232,6 +250,7 @@ public class RaftNode implements MessageHandling {
     }
 
 
+    // broadcast to all the peers that current node is the leader
     public synchronized void broadcastTo() {
         assert type == Types.LEADER;
         for(int i = 0; i < num_peers; i++) {

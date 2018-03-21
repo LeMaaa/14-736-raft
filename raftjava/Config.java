@@ -150,6 +150,7 @@ public class Config extends UnicastRemoteObject implements Remote {
         int lastTermWithLeader = 0;
 
         for( iteration = 0; iteration < 10; iteration++ ) {
+
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
@@ -164,8 +165,11 @@ public class Config extends UnicastRemoteObject implements Remote {
                     break;
                 }
                 if (this.connected[i]) {
+                    // System.out.println("Found a connected node");
+
                     GetStateReply state = transportLayerCtrl.getState(i);
                     if( state == null ) {
+                        System.out.println("state of node unregistered");
                         /* Seems like some raft peer has not yet registered itself with the controller. */
                         continue;
                     }
