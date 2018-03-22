@@ -141,7 +141,7 @@ public class RaftNode implements MessageHandling {
 
         // if this is a heartbeat, simply reply success
         if (appendEntriesArg.getEntries() == null) {
-            System.out.println("Received heartbeat, reply true");
+            // System.out.println("Received heartbeat, reply true");
             return new AppendEntriesReply(this.state.getCurrentTerm(), true);
         }
 
@@ -217,8 +217,8 @@ public class RaftNode implements MessageHandling {
 
         // only FOLLOWER can start election
         if(System.currentTimeMillis() > getCurrentElectionTimeout() && (getType() == Types.FOLLOWER)) {
-            System.out.println(System.currentTimeMillis());
-            System.out.println(electionTimeout);
+            // System.out.println(System.currentTimeMillis());
+            // System.out.println(electionTimeout);
             startElection();
         }
     }
@@ -293,10 +293,9 @@ public class RaftNode implements MessageHandling {
                         // System.out.println("The current type is " + this.type);
                         if (getType() == Types.CANDIDATE) {
                             toLeader();
-                        } else {
-                            // was set as follower in the middle, so we give up
-                            break;
                         }
+
+                        break;
                     }
                 }
             }
@@ -309,9 +308,10 @@ public class RaftNode implements MessageHandling {
         // wait for next turn
         if (this.type != Types.LEADER) {
             this.toFollower(this.state.getCurrentTerm(), getLeaderId());
+            System.out.println("We have no leader.");
         }
 
-        System.out.println("Election finishes, vote count is: " + votes.get() + " the leader is: " + getLeaderId());
+        System.out.println("Election finishes, vote count is: " + votes.get() + " the current leaderID is: " + getLeaderId());
     }
 
     // Upon wining election, send heartbeats to server
@@ -335,13 +335,13 @@ public class RaftNode implements MessageHandling {
         this.type = Types.CANDIDATE;
         // resetElectionTimeout();
 
-        System.out.println("to Candidate Status");
+        // System.out.println("to Candidate Status");
     }
 
 
     // operations related to convert to leader
     public synchronized void toLeader() {
-        System.out.println("Converting to leader");
+        // System.out.println("Converting to leader");
         nextIndex.clear();
         matchIndex.clear();
         this.type = Types.LEADER;
@@ -362,19 +362,20 @@ public class RaftNode implements MessageHandling {
 
     public synchronized void toFollower(int term, int leaderId) {
         this.state.setCurrentTerm(term);
-        this.state.setVotedFor(leaderId);
+        // invalidate vote when converting to follower
+        this.state.setVotedFor(-1);
         this.type = Types.FOLLOWER;
         this.leaderID = leaderId;
 
         resetElectionTimeout();
 
 
-        System.out.println("To Follower Status");
+        // System.out.println("To Follower Status");
     }
 
     public synchronized void sendHeartbeatToServer(int serverId) 
             throws RemoteException, ClassNotFoundException, IOException {
-        System.out.println("Sending Heartbeat to server: " + serverId);
+        // System.out.println("Sending Heartbeat to server: " + serverId);
 
         if(getType() != Types.LEADER) return;
 
