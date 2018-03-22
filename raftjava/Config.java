@@ -165,11 +165,12 @@ public class Config extends UnicastRemoteObject implements Remote {
                     break;
                 }
                 if (this.connected[i]) {
-                    // System.out.println("Found a connected node");
+                    // System.out.println("Node " + i + " is connected.");
 
                     GetStateReply state = transportLayerCtrl.getState(i);
                     if( state == null ) {
                         // System.out.println("state of node unregistered");
+
                         /* Seems like some raft peer has not yet registered itself with the controller. */
                         continue;
                     }

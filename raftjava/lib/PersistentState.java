@@ -18,23 +18,23 @@ public class PersistentState {
     }
 
 
-    public int getCurrentTerm() {
+    public synchronized int getCurrentTerm() {
         return currentTerm;
     }
 
-    public void setCurrentTerm(int currentTerm) {
+    public synchronized void setCurrentTerm(int currentTerm) {
         this.currentTerm = currentTerm;
     }
 
-    public int getVotedFor() {
+    public synchronized int getVotedFor() {
         return votedFor;
     }
 
-    public void setVotedFor(int votedFor) {
+    public synchronized void setVotedFor(int votedFor) {
         this.votedFor = votedFor;
     }
 
-    public Log getLog() {
+    public synchronized Log getLog() {
         return log;
     }
 
