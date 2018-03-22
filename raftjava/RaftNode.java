@@ -18,7 +18,7 @@ public class RaftNode implements MessageHandling {
     private LogEntries lastEntry;
     
     private long electionTimeout;
-    private int electionTimeoutMults = 50;
+    private int electionTimeoutMults = 25;
 
     private double heartbeatMillis   = 250;
 
@@ -26,7 +26,7 @@ public class RaftNode implements MessageHandling {
     private static final Random random = new Random();
 
     // base electio ntimeout
-    private static final long T = 100;  //100ms
+    private static final long T = 200;  //100ms
 
     private int commitIndex = 0; // index of highest log entry known to be committed
     private int lastApplied = 0; //  index of highest log entry applied to state machine
@@ -38,12 +38,15 @@ public class RaftNode implements MessageHandling {
 
     private synchronized void resetElectionTimeout() {
         // electionTimeout: 100 to 350ms
-        electionTimeout = System.currentTimeMillis() + T + random.nextInt(electionTimeoutMults)*5;
+        electionTimeout = System.currentTimeMillis() + T + random.nextInt(electionTimeoutMults)*10;
 
     }
 
-    public int getPort() {return this.port;}
-    public void setLeaderID(int id) {this.leaderID = id;}
+    public int getPort() { return this.port; }
+    public void setLeaderID(int id) { this.leaderID = id; }
+    public synchronized int getLeaderId() { return this.leaderID; }
+    public synchronized long getCurrentElectionTimeout() { return this.electionTimeout; }
+    public synchronized Types getType() { return this.type; };
 
     public RaftNode(int port, int id, int num_peers) throws Exception {
         this.id = id;
@@ -131,10 +134,7 @@ public class RaftNode implements MessageHandling {
         // transfer to follower status if the current node is waiting for election result
         // also update the current leader
         if (appendEntriesArg.getTerm() > state.getCurrentTerm()) {
-            this.state.setCurrentTerm(appendEntriesArg.getTerm());
-            this.state.setVotedFor(appendEntriesArg.getLeaderId());
-            this.leaderID = appendEntriesArg.getLeaderId();
-            this.type = Types.FOLLOWER;
+            this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
         }
 
         resetElectionTimeout();
@@ -181,60 +181,59 @@ public class RaftNode implements MessageHandling {
     // election will only be run if there is no leader in the cluster
     // or when the leader doesn't respond
     private void launchPeriodicTasksThread() {
-        final Thread t = new Thread(() -> {
+        final Thread t1 = new Thread(() -> {
                 try {
                     while(true) {
-                        Thread.sleep(100);
-                        runPeriodicTasks();
+                        Thread.sleep(10);
+                        runPeriodicElection();
                     }
                 } catch (Throwable e) {
                    e.printStackTrace();
                 }
 
         }, "RaftNode");
-        t.start();
+
+        final Thread t2 = new Thread(() -> {
+                try {
+                    while(true) {
+                        runPeriodicHeartbeat();
+                        Thread.sleep(100);
+                    }
+                } catch (Throwable e) {
+                   e.printStackTrace();
+                }
+
+        }, "Heartbeat");
+
+        t1.start();
+        t2.start();
     }
 
 
     // periodic task, for now just choose new leader
     // don't have to be synchronized
-    private void runPeriodicTasks() throws Exception {
+    private void runPeriodicElection() throws Exception {
         // run election as long as we don't receive heartbeat from leader
 
-        if(System.currentTimeMillis() > electionTimeout && (type != Types.LEADER)) {
+        // only FOLLOWER can start election
+        if(System.currentTimeMillis() > getCurrentElectionTimeout() && (getType() == Types.FOLLOWER)) {
+            System.out.println(System.currentTimeMillis());
+            System.out.println(electionTimeout);
             startElection();
         }
+    }
+
+    private void runPeriodicHeartbeat() throws Exception {
+        // run election as long as we don't receive heartbeat from leader
 
         // if current node is leader, periodically send heartbeat
-        if (type == Types.LEADER) {
+        if (getType() == Types.LEADER) {
             for (int i = 0; i < num_peers; i++) {
                 if (i != id)
                     sendHeartbeatToServer(i);
             }
         }
     }
-
-
-
-    public synchronized void startElectionProcess() throws RemoteException,IOException,ClassNotFoundException {
-        Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new TimerTask() {
-
-            public void run() {
-
-                if(electionTimeout == 0.0) {
-                    if (type != Types.LEADER) {
-                        try {
-                            startElection();
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                }
-            }
-        }, 0, 100);
-    }
-
     // election does not have to be synchronized
 
     public void startElection() throws RemoteException, IOException, ClassNotFoundException {
@@ -244,8 +243,6 @@ public class RaftNode implements MessageHandling {
         // transition to candidate
         this.toCandidate();
 
-        // reset election timeout since election is started
-        resetElectionTimeout();
 
         AtomicInteger votes = new AtomicInteger(1);
 
@@ -294,7 +291,7 @@ public class RaftNode implements MessageHandling {
                     if(votes.get() > num_peers/2) {
                         System.out.println("More than half of votes received!");
                         // System.out.println("The current type is " + this.type);
-                        if (this.type == Types.CANDIDATE) {
+                        if (getType() == Types.CANDIDATE) {
                             toLeader();
                         } else {
                             // was set as follower in the middle, so we give up
@@ -305,15 +302,21 @@ public class RaftNode implements MessageHandling {
             }
         } else {
             System.out.println("We have no peers.");
-            this.toLeader();
+            // this.toLeader();
         }
 
-        System.out.println("Election finishes, vote count is: " + votes.get() + " the leader is: " + leaderID);
+        // convert back to follower
+        // wait for next turn
+        if (this.type != Types.LEADER) {
+            this.toFollower(this.state.getCurrentTerm(), getLeaderId());
+        }
+
+        System.out.println("Election finishes, vote count is: " + votes.get() + " the leader is: " + getLeaderId());
     }
 
     // Upon wining election, send heartbeats to server
     public void broadcastTo() {
-        assert type == Types.LEADER;
+        assert getType() == Types.LEADER;
         for(int i = 0; i < num_peers; i++) {
             try {
                 if (i != id)
@@ -330,6 +333,7 @@ public class RaftNode implements MessageHandling {
         this.state.setCurrentTerm(this.state.getCurrentTerm() + 1);
         this.state.setVotedFor(this.id);
         this.type = Types.CANDIDATE;
+        // resetElectionTimeout();
 
         System.out.println("to Candidate Status");
     }
@@ -360,6 +364,10 @@ public class RaftNode implements MessageHandling {
         this.state.setCurrentTerm(term);
         this.state.setVotedFor(leaderId);
         this.type = Types.FOLLOWER;
+        this.leaderID = leaderId;
+
+        resetElectionTimeout();
+
 
         System.out.println("To Follower Status");
     }
@@ -368,7 +376,7 @@ public class RaftNode implements MessageHandling {
             throws RemoteException, ClassNotFoundException, IOException {
         System.out.println("Sending Heartbeat to server: " + serverId);
 
-        if(type != Types.LEADER) return;
+        if(getType() != Types.LEADER) return;
 
         // empty entries
         // will not update logs
@@ -517,7 +525,7 @@ public class RaftNode implements MessageHandling {
 
     @Override
     public GetStateReply getState() {
-        GetStateReply gr = new GetStateReply(this.state.getCurrentTerm(), this.type == Types.LEADER);
+        GetStateReply gr = new GetStateReply(this.state.getCurrentTerm(), this.getType() == Types.LEADER);
         return gr;
     }
 
