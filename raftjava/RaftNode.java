@@ -18,7 +18,7 @@ public class RaftNode implements MessageHandling {
     private LogEntries lastEntry;
     
     private long electionTimeout;
-    private int electionTimeoutMults = 20;
+    private int electionTimeoutMults = 50;
 
     private double heartbeatMillis   = 250;
 
@@ -26,7 +26,7 @@ public class RaftNode implements MessageHandling {
     private static final Random random = new Random();
 
     // base electio ntimeout
-    private static final long T = 200;  //100ms
+    private static final long T = 100;  //100ms
 
     private int commitIndex = 0; // index of highest log entry known to be committed
     private int lastApplied = 0; //  index of highest log entry applied to state machine
@@ -37,8 +37,8 @@ public class RaftNode implements MessageHandling {
 
 
     private synchronized void resetElectionTimeout() {
-        // electionTimeout: 200 to 350ms
-        electionTimeout = System.currentTimeMillis() + T + random.nextInt(electionTimeoutMults)*10;
+        // electionTimeout: 100 to 350ms
+        electionTimeout = System.currentTimeMillis() + T + random.nextInt(electionTimeoutMults)*5;
 
     }
 
@@ -83,7 +83,7 @@ public class RaftNode implements MessageHandling {
         //     return new RequestVoteReply(state.getCurrentTerm(), false);
         // }
 
-        System.out.println("Got a vote request from instance " + requestVoteArgs.getCandidateId());
+        // System.out.println("Got a vote request from instance " + requestVoteArgs.getCandidateId());
         boolean voted = false;
 
         // a valid vote should have the same term (updated above)
@@ -104,6 +104,13 @@ public class RaftNode implements MessageHandling {
             this.state.setVotedFor(requestVoteArgs.getCandidateId());
             resetElectionTimeout();
 
+        } else {
+            if (state.getVotedFor() != requestVoteArgs.getCandidateId())
+                System.out.println("Already voted for " + state.getVotedFor());
+            if (requestVoteArgs.getTerm() < this.state.getCurrentTerm())
+                System.out.println("Current term is higher: " + this.state.getCurrentTerm());
+
+            System.out.println("vote False for candidate: " + requestVoteArgs.getCandidateId());
         }
 
 
@@ -228,7 +235,7 @@ public class RaftNode implements MessageHandling {
         }, 0, 100);
     }
 
-    // election probably does not have to be synchronized
+    // election does not have to be synchronized
 
     public void startElection() throws RemoteException, IOException, ClassNotFoundException {
 
@@ -256,37 +263,29 @@ public class RaftNode implements MessageHandling {
                 if(i == id) continue;
 
                 // send message to corresponding node
-                System.out.println("Trying to send request vote");
+                // System.out.println("Trying to send request vote");
 
                 // need to persistently try until got a message
                 Message msg = new Message(MessageType.RequestVoteArgs, id, i, data);
-                System.out.println("Request vote sent to node " + i);
+                // System.out.println("Request vote sent to node " + i);
 
                 Message cur = null;
                 RequestVoteReply reply = null;
 
-                // keep sending until got reply
-                // while (cur == null) {
-                //     System.out.println("Trying to get a good reply...");
-                //     synchronized(lib) {
-                        cur = lib.sendMessage(msg);
-                        if (cur == null)
-                            continue;
-                //     }
-                // }
-                System.out.println("Got reply for message!");
+                cur = lib.sendMessage(msg);
+                if (cur == null)
+                    continue;
 
                 reply = (RequestVoteReply) SerializationUtils.toObject(cur.getBody());
 
-                System.out.println("Got vote reply!");
-                System.out.println("Reply term: " + reply.getTerm() + " Vote: " + reply.isVoteGranted());
+                // System.out.println("Got vote reply!");
+                // System.out.println("Reply term: " + reply.getTerm() + " Vote: " + reply.isVoteGranted());
                 if (reply.getTerm() > this.state.getCurrentTerm()) {
                     // reply has higher term, means current node cannot be leader
                     this.toFollower(reply.getTerm(), i);
                     break;
                 } else if (reply.getTerm() <= this.state.getCurrentTerm()) {
 
-                    System.out.println("Valid vote!");
                     if (reply.isVoteGranted()) {
                         votes.getAndIncrement();
                     }
@@ -294,11 +293,10 @@ public class RaftNode implements MessageHandling {
                     // more than half, selected as leader
                     if(votes.get() > num_peers/2) {
                         System.out.println("More than half of votes received!");
-                        System.out.println("The current type is " + this.type);
+                        // System.out.println("The current type is " + this.type);
                         if (this.type == Types.CANDIDATE) {
                             toLeader();
                         } else {
-
                             // was set as follower in the middle, so we give up
                             break;
                         }
@@ -310,7 +308,7 @@ public class RaftNode implements MessageHandling {
             this.toLeader();
         }
 
-        System.out.println("Election finishes, the leader is: " + leaderID);
+        System.out.println("Election finishes, vote count is: " + votes.get() + " the leader is: " + leaderID);
     }
 
     // Upon wining election, send heartbeats to server
@@ -337,6 +335,7 @@ public class RaftNode implements MessageHandling {
     }
 
 
+    // operations related to convert to leader
     public synchronized void toLeader() {
         System.out.println("Converting to leader");
         nextIndex.clear();
@@ -385,15 +384,10 @@ public class RaftNode implements MessageHandling {
         Message re = null;
         AppendEntriesReply res = null;
 
-        // while (re == null) {
-        //     System.out.println("Trying to get a good heartbeat reply.");
-        //     synchronized(lib) {
-                re = lib.sendMessage(msg);
-                if (re == null) {
-                    return;
-                }
-        //     }
-        // }
+        re = lib.sendMessage(msg);
+        if (re == null) {
+            return;
+        }
 
         res = (AppendEntriesReply) SerializationUtils.toObject(re.getBody());
 
