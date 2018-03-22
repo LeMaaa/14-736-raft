@@ -232,7 +232,7 @@ public class Config extends UnicastRemoteObject implements Remote {
                 if( term == -1 ) {
                     term = xterm.term;
                 } else if( term != xterm.term ) {
-                    System.out.println("Agreed term: " + term + "Server term: " + xterm.term );
+                    System.out.println("Agreed term: " + term + " Server term: " + xterm.term );
                     System.err.println("Servers do not agree on term. Exiting!");
                     cleanup();
                 }

@@ -177,7 +177,7 @@ public class RaftNode implements MessageHandling {
                 try {
                     while(true) {
                         runPeriodicTasks();
-                        Thread.sleep(200);
+                        Thread.sleep(100);
                     }
                 } catch (Throwable e) {
                    e.printStackTrace();
@@ -194,6 +194,14 @@ public class RaftNode implements MessageHandling {
 
         if(System.currentTimeMillis() > electionTimeout && (type != Types.LEADER)) {
             startElection();
+        }
+
+        // if current node is leader, periodically send heartbeat
+        if (type == Types.LEADER) {
+            for (int i = 0; i < num_peers; i++) {
+                if (i != id)
+                    sendHeartbeatToServer(i);
+            }
         }
     }
 
@@ -258,10 +266,9 @@ public class RaftNode implements MessageHandling {
                 // keep sending until got reply
                 while (cur == null) {
                     cur = lib.sendMessage(msg);
-                    reply = (RequestVoteReply) SerializationUtils.toObject(cur.getBody());
                 }
 
-
+                reply = (RequestVoteReply) SerializationUtils.toObject(cur.getBody());
 
                 System.out.println("Got vote reply!");
                 System.out.println("Reply term: " + reply.getTerm() + " Vote: " + reply.isVoteGranted());
@@ -370,8 +377,10 @@ public class RaftNode implements MessageHandling {
 
         while (re == null) {
             re = lib.sendMessage(msg);
-            res = (AppendEntriesReply) SerializationUtils.toObject(re.getBody());
         }
+
+        res = (AppendEntriesReply) SerializationUtils.toObject(re.getBody());
+
 
         if(res.getTerm() > state.getCurrentTerm()) {
             // response has higher term
