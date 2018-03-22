@@ -169,7 +169,7 @@ public class Config extends UnicastRemoteObject implements Remote {
 
                     GetStateReply state = transportLayerCtrl.getState(i);
                     if( state == null ) {
-                        System.out.println("state of node unregistered");
+                        // System.out.println("state of node unregistered");
                         /* Seems like some raft peer has not yet registered itself with the controller. */
                         continue;
                     }
@@ -208,6 +208,7 @@ public class Config extends UnicastRemoteObject implements Remote {
 
             if( leaders.size() != 0 ) {
                 List<Integer> leadersPerTerm = leaders.get( lastTermWithLeader );
+                System.out.println("Leader this term is: " + leadersPerTerm.get(0));
                 return leadersPerTerm.get(0);
             }
         }
@@ -231,6 +232,7 @@ public class Config extends UnicastRemoteObject implements Remote {
                 if( term == -1 ) {
                     term = xterm.term;
                 } else if( term != xterm.term ) {
+                    System.out.println("Agreed term: " + term + "Server term: " + xterm.term );
                     System.err.println("Servers do not agree on term. Exiting!");
                     cleanup();
                 }

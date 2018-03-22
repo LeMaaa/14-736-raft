@@ -100,7 +100,7 @@ public class Log {
     }
 
     public synchronized int getLastTerm() {
-        System.out.print("Current index:" + this.lastEntryIndex());
+        // System.out.print("Current index:" + this.lastEntryIndex());
         if(lastEntryIndex() <= 0) return 0;
         return getEntry(lastIndex).getTerm();
     }

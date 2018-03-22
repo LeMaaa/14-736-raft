@@ -29,10 +29,14 @@ public class RaftTest {
         cfg.checkOneLeader();
 
         term1 = cfg.checkTerms();
+
+        System.out.println("\n term 1 is: " + term1 + "\n");
        
         Thread.sleep( 2 * RAFT_ELECTION_TIMEOUT );
 
         term2 = cfg.checkTerms();
+
+        System.out.println("\n term 2 is: " + term2 + "\n");
 
         if( term1 != term2 ) {
             System.err.println( "Warning : Term changed without any failures. \n" );

@@ -13,6 +13,8 @@ public class PersistentState {
 
     public PersistentState() {
         log = new Log();
+        // starting with term 1
+        currentTerm = 1;
     }
 
 
