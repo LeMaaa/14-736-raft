@@ -262,8 +262,8 @@ public class RaftNode implements MessageHandling {
                 try {
                     while(true) {
                         Thread.sleep(10);
-                        runPeriodicElection();
                         runPeriodicHeartbeat();
+                        runPeriodicElection();
                     }
                 } catch (Throwable e) {
                    e.printStackTrace();
@@ -416,6 +416,8 @@ public class RaftNode implements MessageHandling {
         this.state.setCurrentTerm(this.state.getCurrentTerm() + 1);
         this.state.setVotedFor(this.id);
         this.type = Types.CANDIDATE;
+
+        resetElectionTimeout();
     }
 
 
@@ -505,6 +507,9 @@ public class RaftNode implements MessageHandling {
                 // get all the entires after server's next index to update server
                 if(this.state.getLog().lastEntryIndex() >= nextIndex.get(serverId)) {
                     entries = state.getLog().getEntryFrom(nextIndex.get(serverId));
+                } else {
+                    // updated, don't need to send
+                    return false;
                 }
 
                 // be careful with the corner case
@@ -605,28 +610,19 @@ public class RaftNode implements MessageHandling {
         resetHeartbeatTimeout();
 
         // more than half, commit
+        // think about when to commit entries?
+
         if (count > num_peers/2) {
             try {
-                commitEntry();
+                if (!commitEntry()) {
+                    // cannot commit
+                    return false;
+                }
             } catch (RemoteException r) {
                 r.printStackTrace();
                 System.out.println("Commit fails");
                 return false;
             }
-
-            System.out.println("Appending entries to peers succeeds");
-            // need to send again to make peers commit
-            resetHeartbeatTimeout();
-            for(int i = 0; i < num_peers; i++) {
-                if(i == id) continue;
-                try {
-                    sendAppendEntriesRequest(i);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-            resetHeartbeatTimeout();
-
 
             return true;
         }
@@ -635,10 +631,10 @@ public class RaftNode implements MessageHandling {
         return false;
     }
 
-    public synchronized void commitEntry() throws RemoteException {
+    public synchronized boolean commitEntry() throws RemoteException {
         System.out.println("Commiting entries");
 
-        if(type != Types.LEADER) return;
+        if(type != Types.LEADER) return false;
         // if(!isCommittable(firstIndexOfTerm)) return;
 
         // commit till the majority of match index that is larger than commitIndex
@@ -664,10 +660,25 @@ public class RaftNode implements MessageHandling {
 
         // dont commit if new commit index is smaller, or when the term is different
         if (commitIndex >= newCommitIndex || state.getLog().getEntry(newCommitIndex).getTerm() != state.getCurrentTerm()) {
-            return;
+            System.out.println("Cannot commit to local");
+            return false;
         }
 
         applyTillNewCommitIndex(commitIndex, newCommitIndex);
+
+        // need to send again to make peers commit
+        resetHeartbeatTimeout();
+        for(int i = 0; i < num_peers; i++) {
+            if(i == id) continue;
+            try {
+                sendAppendEntriesRequest(i);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        resetHeartbeatTimeout();
+
+        return true;
     }
 
     public synchronized void applyTillNewCommitIndex(int oldCommitIndex, int newCommitIndex) throws RemoteException {
@@ -713,7 +724,7 @@ public class RaftNode implements MessageHandling {
 
         // check current log, starting from the last committed index
         // if this command already exists, just reply true
-        for(int i = getCommitIndex() + 1; i < this.state.getLog().lastEntryIndex(); i++) {
+        for(int i = getCommitIndex() + 1; i <= this.state.getLog().lastEntryIndex(); i++) {
             if (state.getLog().getEntry(i).getCommand() == command){
                 state.getLog().getEntry(i).setTerm(term);
                 System.out.println("Entry exists, return true");
@@ -727,9 +738,6 @@ public class RaftNode implements MessageHandling {
         index = this.state.getLog().lastEntryIndex() + 1;
         LogEntries entry = new LogEntries(term, index, command);
         this.state.getLog().append(entry);
-        // // update current term
-        // this.state.setCurrentTerm(state.getCurrentTerm());
-
 
         boolean appendRes = appendEntriesToPeersAndCommit();
 
