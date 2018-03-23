@@ -17,6 +17,8 @@ public class PersistentState {
         currentTerm = 1;
     }
 
+    // access to persist state variables need to be 
+    // thread-safe
 
     public synchronized int getCurrentTerm() {
         return currentTerm;
