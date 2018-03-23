@@ -21,6 +21,7 @@ public class RaftNode implements MessageHandling {
     private int electionTimeoutMults = 25;
 
     private long heartbeatMillis = 200;
+    private long heartbeatTimeout;
 
     private PersistentState state;
     private static final Random random = new Random();
@@ -39,13 +40,17 @@ public class RaftNode implements MessageHandling {
     private synchronized void resetElectionTimeout() {
         // electionTimeout: 200 to 450ms
         electionTimeout = System.currentTimeMillis() + T + random.nextInt(electionTimeoutMults)*10;
+    }
 
+    private synchronized void resetHeartbeatTimeout() {
+        heartbeatTimeout = System.currentTimeMillis() + heartbeatMillis;
     }
 
     public int getPort() { return this.port; }
     public synchronized void setLeaderId(int id) { this.leaderID = id; }
     public synchronized int getLeaderId() { return this.leaderID; }
     public synchronized long getCurrentElectionTimeout() { return this.electionTimeout; }
+    public synchronized long getCurrentHeartbeatTimeout() { return this.heartbeatTimeout; }
     public synchronized Types getType() { return this.type; }
     public synchronized int getCommitIndex() { return commitIndex; }
 
@@ -70,6 +75,7 @@ public class RaftNode implements MessageHandling {
         try {
             // set election timeout before launching periodic tasks
             resetElectionTimeout();
+            resetHeartbeatTimeout();
             launchPeriodicTasksThread();
         } catch (Exception e) {
             e.printStackTrace();
@@ -148,12 +154,17 @@ public class RaftNode implements MessageHandling {
         }
 
         // transfer to follower status if the current node is waiting for election result
+        // if already follower, that's ok, still update the leader and current term
         // also update the current leader
-        if ((getType() != Types.FOLLOWER) && (appendEntriesArg.getTerm() > state.getCurrentTerm())) {
-            this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
+        if ((appendEntriesArg.getTerm() > state.getCurrentTerm())) {
+            if (getType() != Types.FOLLOWER)
+                this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
+            else {
+                // still let's update current term
+                this.state.setCurrentTerm(appendEntriesArg.getTerm());
+                resetElectionTimeout();
+            }
         }
-
-        resetElectionTimeout();
 
         // if this is a heartbeat, simply reply success
         if (appendEntriesArg.getEntries() == null && appendEntriesArg.getPrevLogIndex() == -1 
@@ -248,6 +259,7 @@ public class RaftNode implements MessageHandling {
                     while(true) {
                         Thread.sleep(10);
                         runPeriodicElection();
+                        runPeriodicHeartbeat();
                     }
                 } catch (Throwable e) {
                    e.printStackTrace();
@@ -255,20 +267,20 @@ public class RaftNode implements MessageHandling {
 
         }, "RaftNode");
 
-        final Thread t2 = new Thread(() -> {
-                try {
-                    while(true) {
-                        runPeriodicHeartbeat();
-                        Thread.sleep(heartbeatMillis);
-                    }
-                } catch (Throwable e) {
-                   e.printStackTrace();
-                }
+        // final Thread t2 = new Thread(() -> {
+        //         try {
+        //             while(true) {
+        //                 runPeriodicHeartbeat();
+        //                 Thread.sleep(heartbeatMillis);
+        //             }
+        //         } catch (Throwable e) {
+        //            e.printStackTrace();
+        //         }
 
-        }, "Heartbeat");
+        // }, "Heartbeat");
 
         t1.start();
-        t2.start();
+        // t2.start();
     }
 
 
@@ -289,7 +301,8 @@ public class RaftNode implements MessageHandling {
         // run election as long as we don't receive heartbeat from leader
 
         // if current node is leader, periodically send heartbeat
-        if (getType() == Types.LEADER) {
+        if (System.currentTimeMillis() > getCurrentHeartbeatTimeout() && getType() == Types.LEADER) {
+            resetHeartbeatTimeout();
             for (int i = 0; i < num_peers; i++) {
                 if (i != id)
                     sendHeartbeatToServer(i);
@@ -471,86 +484,88 @@ public class RaftNode implements MessageHandling {
 
     // used to send log entry message
     // return true for success, false for failure
-    public synchronized boolean sendAppendEntriesRequest(int serverId)
+    public boolean sendAppendEntriesRequest(int serverId)
             throws RemoteException, ClassNotFoundException, IOException{
         System.out.println("Sending Append Entries Request to server: " + serverId);
         boolean retry = true;
 
         while (retry) {
-            if(type != Types.LEADER) return false;
-            ArrayList<LogEntries> entries = new ArrayList<LogEntries>();
+            synchronized(this) {
+                if(type != Types.LEADER) return false;
+                ArrayList<LogEntries> entries = new ArrayList<LogEntries>();
 
-            // leader has more updated log
-            // get all the entires after server's next index to update server
-            if(this.state.getLog().lastEntryIndex() >= nextIndex.get(serverId)) {
-                entries = state.getLog().getEntryFrom(nextIndex.get(serverId));
-            }
+                // leader has more updated log
+                // get all the entires after server's next index to update server
+                if(this.state.getLog().lastEntryIndex() >= nextIndex.get(serverId)) {
+                    entries = state.getLog().getEntryFrom(nextIndex.get(serverId));
+                }
 
-            // be careful with the corner case
-            // what if nextIndex is 0?
-            int prevLogIndex = Math.max(nextIndex.get(serverId)-1, 0);
-            int prevLogTerm = state.getLog().getEntry(prevLogIndex) == null ? 1 : state.getLog().getEntry(prevLogIndex).getTerm();
+                // be careful with the corner case
+                // what if nextIndex is 0?
+                int prevLogIndex = Math.max(nextIndex.get(serverId)-1, 0);
+                int prevLogTerm = state.getLog().getEntry(prevLogIndex) == null ? 1 : state.getLog().getEntry(prevLogIndex).getTerm();
 
-            System.out.println("Append Entries Request, prevlogIndex: " + prevLogIndex + " prevLogTerm: " + prevLogTerm);
-            AppendEntriesArg args = new AppendEntriesArg(this.state.getCurrentTerm(),
-                    this.id, prevLogIndex, prevLogTerm,
-                    entries, commitIndex);
+                System.out.println("Append Entries Request, prevlogIndex: " + prevLogIndex + " prevLogTerm: " + prevLogTerm);
+                AppendEntriesArg args = new AppendEntriesArg(this.state.getCurrentTerm(),
+                        this.id, prevLogIndex, prevLogTerm,
+                        entries, commitIndex);
 
-            Message msg = new Message(MessageType.AppendEntriesArg, id, serverId, SerializationUtils.toByteArray(args));
-            Message re = lib.sendMessage(msg);
+                Message msg = new Message(MessageType.AppendEntriesArg, id, serverId, SerializationUtils.toByteArray(args));
+                Message re = lib.sendMessage(msg);
 
-            if (re == null) {
-                // no response, return.
-                return false;
-            }
+                if (re == null) {
+                    // no response, return.
+                    return false;
+                }
 
-            System.out.println("Received response");
+                System.out.println("Received response");
 
-            AppendEntriesReply res = (AppendEntriesReply) SerializationUtils.toObject(re.getBody());
+                AppendEntriesReply res = (AppendEntriesReply) SerializationUtils.toObject(re.getBody());
 
-            // res has higher term, give up as leader
-            if(res.getTerm() > state.getCurrentTerm()) {
+                // res has higher term, give up as leader
+                if(res.getTerm() > state.getCurrentTerm()) {
 
-                toFollower(res.getTerm(), serverId);
-                return false;
+                    toFollower(res.getTerm(), serverId);
+                    return false;
 
-            } else {
-                if(res.isSuccess()) {
-
-                    if (entries == null || entries.size() == 0) {
-                        nextIndex.set(serverId,  Math.max(state.getLog().lastEntryIndex() + 1, 1));
-                    } else {
-                        // match last entry index at leader
-                        matchIndex.set(serverId, state.getLog().lastEntryIndex());
-                        nextIndex.set(serverId, matchIndex.get(serverId) + 1);
-                    }
-
-                    System.out.println("Append entries request succeeds");
-
-                    // success, return
-                    return true;
                 } else {
-                    // fail because of log inconsistency, then decrement nextIndex and retry
-                    System.out.println("Decrease next index and retry");
-                    if (nextIndex.get(serverId) > state.getLog().lastEntryIndex()+1) {
-                        int decreasedIndex = Math.max(state.getLog().lastEntryIndex() + 1, 1);
-                        nextIndex.set(serverId, decreasedIndex);
+                    if(res.isSuccess()) {
 
-                        System.out.println("Index decreased to: " + nextIndex.get(serverId));
-                    } else if (nextIndex.get(serverId) > matchIndex.get(serverId)) {
-                        // cannot go back more than commitIndex
-                        nextIndex.set(serverId, nextIndex.get(serverId) - 1);
+                        if (entries == null || entries.size() == 0) {
+                            nextIndex.set(serverId,  Math.max(state.getLog().lastEntryIndex() + 1, 1));
+                        } else {
+                            // match last entry index at leader
+                            matchIndex.set(serverId, state.getLog().lastEntryIndex());
+                            nextIndex.set(serverId, matchIndex.get(serverId) + 1);
+                        }
 
-                        System.out.println("Index decreased to: " + nextIndex.get(serverId));
-                    } else if (nextIndex.get(serverId) <= matchIndex.get(serverId)) {
+                        System.out.println("Append entries request succeeds");
 
-                        // cannot append since we cannot rollback commits
-                        System.out.println("Cannot append over committed entries!");
-                        return false;
+                        // success, return
+                        return true;
+                    } else {
+                        // fail because of log inconsistency, then decrement nextIndex and retry
+                        System.out.println("Decrease next index and retry");
+                        if (nextIndex.get(serverId) > state.getLog().lastEntryIndex()+1) {
+                            int decreasedIndex = Math.max(state.getLog().lastEntryIndex() + 1, 1);
+                            nextIndex.set(serverId, decreasedIndex);
+
+                            System.out.println("Index decreased to: " + nextIndex.get(serverId));
+                        } else if (nextIndex.get(serverId) > matchIndex.get(serverId)) {
+                            // cannot go back more than commitIndex
+                            nextIndex.set(serverId, nextIndex.get(serverId) - 1);
+
+                            System.out.println("Index decreased to: " + nextIndex.get(serverId));
+                        } else if (nextIndex.get(serverId) <= matchIndex.get(serverId)) {
+
+                            // cannot append since we cannot rollback commits
+                            System.out.println("Cannot append over committed entries!");
+                            return false;
+                        }
                     }
                 }
-            }
 
+            }
         }
         // return false;
         // only commit entry when get majority response
@@ -565,6 +580,8 @@ public class RaftNode implements MessageHandling {
 
         System.out.println("\n Checking log entry of node " + id + " \n");
         state.getLog().dumpEntries();
+
+        resetHeartbeatTimeout();
 
         int count = 1;
         for(int i = 0; i < num_peers; i++) {
@@ -589,6 +606,7 @@ public class RaftNode implements MessageHandling {
 
             System.out.println("Appending entries to peers succeeds");
             // need to send again to make peers commit
+            resetHeartbeatTimeout();
             for(int i = 0; i < num_peers; i++) {
                 if(i == id) continue;
                 try {
@@ -697,6 +715,9 @@ public class RaftNode implements MessageHandling {
         index = this.state.getLog().lastEntryIndex() + 1;
         LogEntries entry = new LogEntries(term, index, command);
         this.state.getLog().append(entry);
+        // // update current term
+        // this.state.setCurrentTerm(state.getCurrentTerm());
+
 
         boolean appendRes = appendEntriesToPeersAndCommit();
 

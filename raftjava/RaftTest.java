@@ -463,6 +463,7 @@ public class RaftTest {
 
                 if( !startReply1.isLeader ) {
                     // leader moved on too quickly
+                    System.out.println("Leader change 1");
                     continue;
                 }
 
@@ -478,11 +479,13 @@ public class RaftTest {
 
                     if( startReply2.term != startReply1.term) {
                         // Term changed while starting.
+                        System.out.println("Leader change 2");
                         continue loop;
                     }
 
                     if( !startReply2.isLeader ) {
                         // No longer leader, so term has changed.
+                        System.out.println("Leader change 3");
                         continue loop;
                     }
 
@@ -498,6 +501,8 @@ public class RaftTest {
 
                         if( cmd == -1) {
                             // term changed -- try again
+                            System.out.println("Term changed, try again");
+
                             continue loop;
                         }
 
@@ -517,6 +522,10 @@ public class RaftTest {
                         if( reply.term != startReply1.term) {
                             // term changed -- can't expect low RPC counts
                             // need to keep going to update total2
+                            System.out.println(reply.term);
+                            System.out.println(startReply1.term);
+                            System.out.println("Term changed 2, try again");
+
                             failed = true;
                         }
                     }
@@ -528,6 +537,10 @@ public class RaftTest {
                     continue loop;
                 }
 
+                int currentRPCCount = total2 - total1;
+
+                System.out.println("Expected RPC count " + ((iters+4)*3));
+                System.out.println("Current RPC count " + currentRPCCount );
                 if( (total2 - total1) > ((iters + 4)*3)) {
                     System.err.println("Too many RPCs");
                     cfg.cleanup();
