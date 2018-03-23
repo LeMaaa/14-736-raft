@@ -94,12 +94,18 @@ public class RaftNode implements MessageHandling {
         // should have votedFor set for this candidate or unset
         // should have more updated last log index
 
-        // || requestVoteArgs.getTerm() > this.lastEntry.getTerm())
+        // If the logs have last entries with different terms, 
+        // then the log with the later term is more up-to-date. 
+        // If the logs end with the same term, 
+        // then whichever log is longer is more up-to-date.
 
+        // larger term wins
+        // if terms are equal, larger index wins
         if(requestVoteArgs.getTerm() >= this.state.getCurrentTerm() && (state.getVotedFor() == -1
                 || state.getVotedFor() == requestVoteArgs.getCandidateId())
-                &&  (requestVoteArgs.getLastLogIndex() >= this.state.getLog().lastEntryIndex() &&
-                     requestVoteArgs.getTerm() >= this.state.getLog().lastEntryTerm())) {
+                &&  (requestVoteArgs.getLastLogTerm() > this.state.getLog().lastEntryTerm() ||
+                     (requestVoteArgs.getLastLogTerm() == this.state.getLog().lastEntryTerm()
+                     && requestVoteArgs.getLastLogIndex() >= this.state.getLog().lastEntryIndex()))) {
 
             // set current as follower since others have higher term
             if (requestVoteArgs.getTerm() > this.state.getCurrentTerm())
@@ -112,9 +118,16 @@ public class RaftNode implements MessageHandling {
         } else {
             if (state.getVotedFor() != -1 && state.getVotedFor() != requestVoteArgs.getCandidateId())
                 System.out.println("Already voted for " + state.getVotedFor());
-            if (requestVoteArgs.getTerm() < this.state.getCurrentTerm())
-                System.out.println("Current term is higher: " + this.state.getCurrentTerm());
 
+            if (requestVoteArgs.getTerm() < this.state.getCurrentTerm())
+                System.out.println("Node " + id + " term is higher: " + this.state.getCurrentTerm() +
+                    " candidate: " + requestVoteArgs.getCandidateId() + " term: " + requestVoteArgs.getTerm());
+
+            if (requestVoteArgs.getLastLogTerm() < this.state.getLog().lastEntryTerm() || 
+                requestVoteArgs.getLastLogIndex() < this.state.getLog().lastEntryIndex())
+                System.out.println("Node " + id + " last entry term: " + this.state.getLog().lastEntryTerm() +
+                    " last index: " + this.state.getLog().lastEntryIndex() + " candidate: " + requestVoteArgs.getCandidateId() 
+                    + " term: " + requestVoteArgs.getLastLogTerm() + " last index: " + requestVoteArgs.getLastLogIndex());
             System.out.println("vote False for candidate: " + requestVoteArgs.getCandidateId());
         }
 
@@ -136,7 +149,7 @@ public class RaftNode implements MessageHandling {
 
         // transfer to follower status if the current node is waiting for election result
         // also update the current leader
-        if (appendEntriesArg.getTerm() > state.getCurrentTerm()) {
+        if ((getType() != Types.FOLLOWER) && (appendEntriesArg.getTerm() > state.getCurrentTerm())) {
             this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
         }
 
@@ -147,7 +160,7 @@ public class RaftNode implements MessageHandling {
             && appendEntriesArg.getPrevLogTerm() == -1) {
             // System.out.println("Received heartbeat, reply true");
             // set leader
-            setLeaderId(appendEntriesArg.getLeaderId());
+            // setLeaderId(appendEntriesArg.getLeaderId());
             return new AppendEntriesReply(this.state.getCurrentTerm(), true);
         }
 
@@ -165,7 +178,7 @@ public class RaftNode implements MessageHandling {
         System.out.println("Append Entries Arg parameters, prev log index: " + appendEntriesArg.getPrevLogIndex()
         + " prev log term: " +  appendEntriesArg.getPrevLogTerm());
 
-// appendEntriesArg.getLeaderId() != getLeaderId()
+        // appendEntriesArg.getLeaderId() != getLeaderId()
         if (this.state.getLog().lastEntryIndex() < appendEntriesArg.getPrevLogIndex() || 
             (appendEntriesArg.getPrevLogIndex() > 0 && 
                     appendEntriesArg.getPrevLogTerm() != this.state.getLog().getEntry(appendEntriesArg.getPrevLogIndex()).getTerm())) {
@@ -524,10 +537,16 @@ public class RaftNode implements MessageHandling {
                         nextIndex.set(serverId, decreasedIndex);
 
                         System.out.println("Index decreased to: " + nextIndex.get(serverId));
-                    } else if (nextIndex.get(serverId) > 1) {
+                    } else if (nextIndex.get(serverId) > getCommitIndex()) {
+                        // cannot go back more than commitIndex
                         nextIndex.set(serverId, nextIndex.get(serverId) - 1);
 
                         System.out.println("Index decreased to: " + nextIndex.get(serverId));
+                    } else if (nextIndex.get(serverId) <= getCommitIndex()) {
+
+                        // cannot append since we cannot rollback commits
+                        System.out.println("Cannot append over committed entries!");
+                        return false;
                     }
                 }
             }
