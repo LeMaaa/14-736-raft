@@ -32,11 +32,13 @@ public class Log {
 
     public void dumpEntries() {
         synchronized(logs) {
+            System.out.println("========================================");
             for (int i = 0; i < logs.size(); i++) {
                 if (i > 0)
                     System.out.println("Log Entry " + i + " contains " + 
                         logs.get(i).getCommand() + " with term: " + logs.get(i).getTerm());
             }
+            System.out.println("========================================");
         }
     }
     // returns the last log index

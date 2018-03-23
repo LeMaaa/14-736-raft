@@ -146,11 +146,11 @@ public class RaftTest {
         cfg.startCommit(101, numServers);
 
         // Follower disconnection
-        System.out.println("Checking one leader\n");
+        System.out.println("\n Checking one leader \n");
         leader = cfg.checkOneLeader();
         cfg.disconnect( (leader + 1) % numServers );
 
-        System.out.println("Checking agreement with one disconnected server");
+        System.out.println("\n Checking agreement with one disconnected server \n");
         // agree when one server is down
         cfg.startCommit(102, numServers - 1);
         cfg.startCommit(103, numServers - 1);
@@ -160,7 +160,7 @@ public class RaftTest {
 
         //reconnect
         cfg.connect((leader + 1) % numServers);
-        System.out.println("Checking with reconnected server");
+        System.out.println("\n Checking with reconnected server \n");
         cfg.startCommit(106, numServers);
         Thread.sleep( RAFT_ELECTION_TIMEOUT );
         cfg.startCommit(107, numServers);

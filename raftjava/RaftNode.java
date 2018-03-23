@@ -97,7 +97,8 @@ public class RaftNode implements MessageHandling {
 
         if(requestVoteArgs.getTerm() >= this.state.getCurrentTerm() && (state.getVotedFor() == -1
                 || state.getVotedFor() == requestVoteArgs.getCandidateId())
-                &&  (this.lastEntry == null || requestVoteArgs.getLastLogIndex() >= this.lastEntry.getIndex())) {
+                &&  (requestVoteArgs.getLastLogIndex() >= this.state.getLog().lastEntryIndex() &&
+                     requestVoteArgs.getTerm() >= this.state.getLog().lastEntryTerm())) {
 
             // set current as follower since others have higher term
             if (requestVoteArgs.getTerm() > this.state.getCurrentTerm())
@@ -592,10 +593,10 @@ public class RaftNode implements MessageHandling {
             ApplyMsg msg = new ApplyMsg(id, i, state.getLog().getEntry(i).getCommand(), false, null);
             lib.applyChannel(msg);
         }
-        System.out.println("\n Apply done \n");
+        // System.out.println("\n Apply done \n");
 
 
-        System.out.println("Checking log entry of node " + id);
+        System.out.println("\n Checking log entry of node " + id + " \n");
         state.getLog().dumpEntries();
         commitIndex = newCommitIndex;
         lastApplied = commitIndex;
