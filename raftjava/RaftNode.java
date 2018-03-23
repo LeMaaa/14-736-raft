@@ -107,6 +107,7 @@ public class RaftNode implements MessageHandling {
 
         // larger term wins
         // if terms are equal, larger index wins
+
         if(requestVoteArgs.getTerm() >= this.state.getCurrentTerm() && (state.getVotedFor() == -1
                 || state.getVotedFor() == requestVoteArgs.getCandidateId())
                 &&  (requestVoteArgs.getLastLogTerm() > this.state.getLog().lastEntryTerm() ||
@@ -156,13 +157,16 @@ public class RaftNode implements MessageHandling {
         // transfer to follower status if the current node is waiting for election result
         // if already follower, that's ok, still update the leader and current term
         // also update the current leader
+
+        // reset election timeout anyways
+        resetElectionTimeout();
+
         if ((appendEntriesArg.getTerm() > state.getCurrentTerm())) {
             if (getType() != Types.FOLLOWER)
                 this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
             else {
                 // still let's update current term
                 this.state.setCurrentTerm(appendEntriesArg.getTerm());
-                resetElectionTimeout();
             }
         }
 
@@ -301,12 +305,13 @@ public class RaftNode implements MessageHandling {
         // run election as long as we don't receive heartbeat from leader
 
         // if current node is leader, periodically send heartbeat
-        if (System.currentTimeMillis() > getCurrentHeartbeatTimeout() && getType() == Types.LEADER) {
+        if (System.currentTimeMillis() > getCurrentHeartbeatTimeout() && (getType() == Types.LEADER)) {
             resetHeartbeatTimeout();
             for (int i = 0; i < num_peers; i++) {
                 if (i != id)
                     sendHeartbeatToServer(i);
             }
+            resetHeartbeatTimeout();
         }
     }
 
@@ -375,9 +380,6 @@ public class RaftNode implements MessageHandling {
                     }
                 }
             }
-        } else {
-            // System.out.println("We have no peers.");
-            // this.toLeader();
         }
 
         // convert back to follower
@@ -387,12 +389,15 @@ public class RaftNode implements MessageHandling {
             // System.out.println("We have no leader.");
         }
 
-        // System.out.println("Election finishes, node: " + id + " vote count is: " + votes.get() + " the current leaderID is: " + getLeaderId());
+        System.out.println("Election finishes, node: " + id + " vote count is: " + votes.get() + " the current leaderID is: " + getLeaderId());
     }
 
     // Upon wining election, send heartbeats to server
     public void broadcastTo() {
-        assert getType() == Types.LEADER;
+        if (getType() != Types.LEADER)
+            return;
+
+        resetHeartbeatTimeout();
         for(int i = 0; i < num_peers; i++) {
             try {
                 if (i != id)
@@ -402,6 +407,8 @@ public class RaftNode implements MessageHandling {
             }
 
         }
+        resetHeartbeatTimeout();
+
     }
 
     // update term and set voted for, and convert the type
@@ -459,7 +466,7 @@ public class RaftNode implements MessageHandling {
         // current term, leaderId, prevLogIndex, prevTerm, entries, commitIndex
         // be careful with the messages...
         AppendEntriesArg args = new AppendEntriesArg(this.state.getCurrentTerm(),
-                this.id, -1, -1, null, commitIndex);
+                this.id, -1, -1, null, getCommitIndex());
 
         Message msg = new Message(MessageType.AppendEntriesArg, id, serverId, SerializationUtils.toByteArray(args));
 
@@ -510,8 +517,10 @@ public class RaftNode implements MessageHandling {
                         this.id, prevLogIndex, prevLogTerm,
                         entries, commitIndex);
 
+
                 Message msg = new Message(MessageType.AppendEntriesArg, id, serverId, SerializationUtils.toByteArray(args));
                 Message re = lib.sendMessage(msg);
+
 
                 if (re == null) {
                     // no response, return.
@@ -593,6 +602,7 @@ public class RaftNode implements MessageHandling {
                 e.printStackTrace();
             }
         }
+        resetHeartbeatTimeout();
 
         // more than half, commit
         if (count > num_peers/2) {
@@ -615,6 +625,8 @@ public class RaftNode implements MessageHandling {
                     e.printStackTrace();
                 }
             }
+            resetHeartbeatTimeout();
+
 
             return true;
         }
