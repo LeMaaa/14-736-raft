@@ -299,17 +299,22 @@ public class RaftTest {
 
         cfg.startCommit(109, numServers);
 
+        System.out.println("\n First commit done \n");
         // put leader and one follower in a partition
         leader = cfg.checkOneLeader();
         cfg.disconnect( (leader + 2) % numServers );
         cfg.disconnect( (leader + 3) % numServers );
         cfg.disconnect( (leader + 4) % numServers );
 
+        System.out.println("\n only two nodes now \n");
+
+
         // submit lots of commands that won't commit
         for(i = 0; i < 50; i ++) {
             cfg.start(leader, 110 + i);
         }
     
+        System.out.println("\n leader commit done \n");
 
         Thread.sleep( RAFT_ELECTION_TIMEOUT / 2);
 
@@ -321,13 +326,20 @@ public class RaftTest {
         cfg.connect( (leader + 3) % numServers );
         cfg.connect( (leader + 4) % numServers );
 
+        System.out.println("\n other three nodes back up \n");
+
         // lots of successful commands to new group.
         for(i = 0; i < 50; i ++) {
             cfg.startCommit(160 + i, 3);
         }
 
+        System.out.println("\n finish commit \n");
+
         // now another partitioned leader and one follower
         leader2 = cfg.checkOneLeader();
+
+        System.out.println("\n found new leader \n");
+
         other = (leader + 2) % numServers;
         if(leader2 == other) {
             other = (leader2 + 1) % numServers;
@@ -335,12 +347,18 @@ public class RaftTest {
 
         cfg.disconnect(other);
 
+        System.out.println("\n disconnect other \n");
+
+
         // lots more commands that wont get committed
         for(i = 0; i < 50; i ++) {
             cfg.start(leader2, 210 + i);
         }
 
+        System.out.println("\n more commits done \n");
+
         Thread.sleep( RAFT_ELECTION_TIMEOUT / 2);
+
 
         // bring original leader back to life
         for(i = 0; i < numServers; i++) {
@@ -351,10 +369,17 @@ public class RaftTest {
         cfg.connect((leader + 1) % numServers);
         cfg.connect(other);
 
+        System.out.println("\n reconnect three \n");
+
+
         // lots of successful commands
         for(i = 0; i < 50; i ++) {
             cfg.startCommit(260 + i, 3);
         }
+
+        System.out.println("\n more more commits done \n");
+
+        System.out.println("\n connect everyone \n");
 
         // now everyone
         for(i = 0; i < numServers; i++) {
