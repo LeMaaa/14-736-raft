@@ -653,8 +653,10 @@ public class RaftNode implements MessageHandling {
             return new StartReply(state.getLog().lastEntryIndex(), term, true);
         }
 
-        // append fails, return false
-        return new StartReply(state.getLog().lastEntryIndex(), term, false);
+        // append fails, but append is done with best effort
+        // as long as leader sent the append requests, we reply to start
+        System.out.println("Append FAILS!");
+        return new StartReply(state.getLog().lastEntryIndex(), term, true);
     }
 
     @Override
