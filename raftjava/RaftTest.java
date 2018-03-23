@@ -299,6 +299,8 @@ public class RaftTest {
 
         cfg.startCommit(109, numServers);
 
+        // all servers contain 109 commit
+
         System.out.println("\n First commit done \n");
         // put leader and one follower in a partition
         leader = cfg.checkOneLeader();
@@ -313,6 +315,8 @@ public class RaftTest {
         for(i = 0; i < 50; i ++) {
             cfg.start(leader, 110 + i);
         }
+
+        // leader has 110 to 159 that won't commit
     
         System.out.println("\n leader commit done \n");
 
@@ -320,6 +324,8 @@ public class RaftTest {
 
         cfg.disconnect( (leader + 0) % numServers );
         cfg.disconnect( (leader + 1) % numServers );
+
+        // leader 0 and 1 have 110 - 159 which shouldn't be committed
 
         // allow other partition to recover
         cfg.connect( (leader + 2) % numServers );
@@ -332,6 +338,8 @@ public class RaftTest {
         for(i = 0; i < 50; i ++) {
             cfg.startCommit(160 + i, 3);
         }
+
+        // 160 - 209 should be commited in leader + 2 to leader + 4 cluster
 
         System.out.println("\n finish commit \n");
 
@@ -347,6 +355,8 @@ public class RaftTest {
 
         cfg.disconnect(other);
 
+        // disconnect one from this group
+
         System.out.println("\n disconnect other \n");
 
 
@@ -354,6 +364,9 @@ public class RaftTest {
         for(i = 0; i < 50; i ++) {
             cfg.start(leader2, 210 + i);
         }
+
+        // 210 to 259 shouldn't be commited in this group
+
 
         System.out.println("\n more commits done \n");
 
@@ -364,6 +377,11 @@ public class RaftTest {
         for(i = 0; i < numServers; i++) {
             cfg.disconnect(i);
         }
+        // leader + 0 and leader + 1 contain 109 to 159,
+        // in which 110 to 159 are not commited
+        // other contains 109, 160 to 209, which are ocmmited
+
+        // other should be leader, and overwrite stale logs in other two
 
         cfg.connect((leader + 0) % numServers);
         cfg.connect((leader + 1) % numServers);

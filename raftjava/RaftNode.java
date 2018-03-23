@@ -537,12 +537,12 @@ public class RaftNode implements MessageHandling {
                         nextIndex.set(serverId, decreasedIndex);
 
                         System.out.println("Index decreased to: " + nextIndex.get(serverId));
-                    } else if (nextIndex.get(serverId) > getCommitIndex()) {
+                    } else if (nextIndex.get(serverId) > matchIndex.get(serverId)) {
                         // cannot go back more than commitIndex
                         nextIndex.set(serverId, nextIndex.get(serverId) - 1);
 
                         System.out.println("Index decreased to: " + nextIndex.get(serverId));
-                    } else if (nextIndex.get(serverId) <= getCommitIndex()) {
+                    } else if (nextIndex.get(serverId) <= matchIndex.get(serverId)) {
 
                         // cannot append since we cannot rollback commits
                         System.out.println("Cannot append over committed entries!");
