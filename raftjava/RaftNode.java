@@ -20,14 +20,14 @@ public class RaftNode implements MessageHandling {
     private long electionTimeout;
     private int electionTimeoutMults = 25;
 
-    private long heartbeatMillis = 200;
+    private long heartbeatMillis = 150;
     private long heartbeatTimeout;
 
     private PersistentState state;
     private static final Random random = new Random();
 
     // base electio ntimeout
-    private static final long T = 300;  //100ms
+    private static final long T = 250;  //100ms
 
     private int commitIndex = 0; // index of highest log entry known to be committed
     private int lastApplied = 0; //  index of highest log entry applied to state machine
@@ -161,7 +161,8 @@ public class RaftNode implements MessageHandling {
         // reset election timeout anyways
         // resetElectionTimeout();
 
-        if ((appendEntriesArg.getTerm() > state.getCurrentTerm())) {
+        if ((appendEntriesArg.getTerm() > state.getCurrentTerm()) || 
+            (getType() == Types.CANDIDATE && appendEntriesArg.getTerm() == state.getCurrentTerm())) {
             this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
         }
 
@@ -243,10 +244,11 @@ public class RaftNode implements MessageHandling {
                 // need to apply till new commit
             }
 
-            System.out.println("Append entries succeeds");
-
-            System.out.println("\n Checking log entry of node " + id + " \n");
-            state.getLog().dumpEntries();
+            if (appendEntriesArg.getEntries() != null && appendEntriesArg.getEntries().size() != 0) {
+                System.out.println("Append entries succeeds");
+                System.out.println("\n Checking log entry of node " + id + " \n");
+                state.getLog().dumpEntries();
+            }
             return new AppendEntriesReply(this.state.getCurrentTerm(), true);
         } else {
 
@@ -283,6 +285,18 @@ public class RaftNode implements MessageHandling {
 
         }, "RaftNode");
 
+        final Thread t2 = new Thread(() -> {
+                try {
+                    while(true) {
+                        Thread.sleep(50);
+                        commitEntry();
+                    }
+                } catch (Throwable e) {
+                   e.printStackTrace();
+                }
+
+        }, "CommitEntry");
+
         // final Thread t2 = new Thread(() -> {
         //         try {
         //             while(true) {
@@ -296,7 +310,7 @@ public class RaftNode implements MessageHandling {
         // }, "Heartbeat");
 
         t1.start();
-        // t2.start();
+        t2.start();
     }
 
 
@@ -318,6 +332,7 @@ public class RaftNode implements MessageHandling {
 
         // if current node is leader, periodically send heartbeat
         if (System.currentTimeMillis() > getCurrentHeartbeatTimeout() && (getType() == Types.LEADER)) {
+
             resetHeartbeatTimeout();
             for (int i = 0; i < num_peers; i++) {
                 if (i != id)
@@ -521,9 +536,6 @@ public class RaftNode implements MessageHandling {
                 // get all the entires after server's next index to update server
                 if(this.state.getLog().lastEntryIndex() >= nextIndex.get(serverId)) {
                     entries = state.getLog().getEntryFrom(nextIndex.get(serverId));
-                } else {
-
-                    return false;
                 }
 
                 // be careful with the corner case
@@ -626,42 +638,42 @@ public class RaftNode implements MessageHandling {
         // more than half, commit
         // think about when to commit entries?
 
-        if (count > num_peers/2) {
-            try {
-                if (!commitEntry()) {
-                    // cannot commit to local
-                    // don't try to commit peers
-                    return false;
-                }
-            } catch (RemoteException r) {
-                r.printStackTrace();
-                System.out.println("Commit fails");
-                return false;
-            }
+        // if (count > num_peers/2) {
+        //     try {
+        //         if (!commitEntry()) {
+        //             // cannot commit to local
+        //             // don't try to commit peers
+        //             return false;
+        //         }
+        //     } catch (RemoteException r) {
+        //         r.printStackTrace();
+        //         System.out.println("Commit fails");
+        //         return false;
+        //     }
 
-            System.out.println("Appending entries to peers succeeds");
-            // need to send again to make peers commit
-            resetHeartbeatTimeout();
-            for(int i = 0; i < num_peers; i++) {
-                if(i == id) continue;
-                try {
-                    sendAppendEntriesRequest(i);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-            resetHeartbeatTimeout();
+        //     System.out.println("Appending entries to peers succeeds");
+        //     // need to send again to make peers commit
+        //     resetHeartbeatTimeout();
+        //     for(int i = 0; i < num_peers; i++) {
+        //         if(i == id) continue;
+        //         try {
+        //             sendAppendEntriesRequest(i);
+        //         } catch (Exception e) {
+        //             e.printStackTrace();
+        //         }
+        //     }
+        //     resetHeartbeatTimeout();
 
 
-            return true;
-        }
+        //     return true;
+        // }
 
-        System.out.println("Commit fails due to non-majority");
-        return false;
+        // System.out.println("Commit fails due to non-majority");
+        return true;
     }
 
     public synchronized boolean commitEntry() throws RemoteException {
-        System.out.println("Commiting entries");
+        // System.out.println("Commiting entries");
 
         if(type != Types.LEADER) return false;
         // if(!isCommittable(firstIndexOfTerm)) return;
@@ -671,10 +683,10 @@ public class RaftNode implements MessageHandling {
         ArrayList<Integer> copy = new ArrayList<>(matchIndex);
         Collections.sort(copy);
 
-        System.out.println("\n Checking match index \n ");
-        for (int i = 0; i < matchIndex.size(); i++)
-            System.out.print(matchIndex.get(i) + " ");
-        System.out.println(" \n ");
+        // System.out.println("\n Checking match index \n ");
+        // for (int i = 0; i < matchIndex.size(); i++)
+        //     System.out.print(matchIndex.get(i) + " ");
+        // System.out.println(" \n ");
 
 
         int matchIndexSize = matchIndex.size();
@@ -684,28 +696,28 @@ public class RaftNode implements MessageHandling {
         // skip one because leader does not have match index
         int newCommitIndex = copy.get(pos+1);
 
-        System.out.println("oldCommitIndex: " + commitIndex + " newCommitIndex: " + newCommitIndex);
-        System.out.println("lastEntry: " + state.getLog().lastEntryIndex());
+        // System.out.println("oldCommitIndex: " + commitIndex + " newCommitIndex: " + newCommitIndex);
+        // System.out.println("lastEntry: " + state.getLog().lastEntryIndex());
 
         // dont commit if new commit index is smaller, or when the term is different
         if (commitIndex >= newCommitIndex || state.getLog().getEntry(newCommitIndex).getTerm() != state.getCurrentTerm()) {
-            System.out.println("Cannot commit to local");
+            // System.out.println("Cannot commit to local");
             return false;
         }
 
         applyTillNewCommitIndex(commitIndex, newCommitIndex);
 
-        // // need to send again to make peers commit
-        // resetHeartbeatTimeout();
-        // for(int i = 0; i < num_peers; i++) {
-        //     if(i == id) continue;
-        //     try {
-        //         sendAppendEntriesRequest(i);
-        //     } catch (Exception e) {
-        //         e.printStackTrace();
-        //     }
-        // }
-        // resetHeartbeatTimeout();
+        // need to send again to make peers commit
+        resetHeartbeatTimeout();
+        for(int i = 0; i < num_peers; i++) {
+            if(i == id) continue;
+            try {
+                sendAppendEntriesRequest(i);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        resetHeartbeatTimeout();
 
         return true;
     }
