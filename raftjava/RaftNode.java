@@ -253,10 +253,10 @@ public class RaftNode implements MessageHandling {
         } else {
 
             // don't delete the commited ones
-            if(appendEntriesArg.getPrevLogIndex() > commitIndex) {
-                this.state.getLog().deleteConflictingEntries(appendEntriesArg.getPrevLogIndex());
+            if(appendEntriesArg.getPrevLogIndex() >= commitIndex) {
+                this.state.getLog().deleteConflictingEntries(appendEntriesArg.getPrevLogIndex()+1);
             }
-            // but what if conflict in commited ones?
+
             System.out.println("Append entries fails");
 
             System.out.println("\n Checking log entry of node " + id + " \n");
@@ -285,17 +285,17 @@ public class RaftNode implements MessageHandling {
 
         }, "RaftNode");
 
-        final Thread t2 = new Thread(() -> {
-                try {
-                    while(true) {
-                        Thread.sleep(50);
-                        commitEntry();
-                    }
-                } catch (Throwable e) {
-                   e.printStackTrace();
-                }
+        // final Thread t2 = new Thread(() -> {
+        //         try {
+        //             while(true) {
+        //                 Thread.sleep(50);
+        //                 commitEntry();
+        //             }
+        //         } catch (Throwable e) {
+        //            e.printStackTrace();
+        //         }
 
-        }, "CommitEntry");
+        // }, "CommitEntry");
 
         // final Thread t2 = new Thread(() -> {
         //         try {
@@ -310,7 +310,7 @@ public class RaftNode implements MessageHandling {
         // }, "Heartbeat");
 
         t1.start();
-        t2.start();
+        // t2.start();
     }
 
 
@@ -336,8 +336,9 @@ public class RaftNode implements MessageHandling {
             resetHeartbeatTimeout();
             for (int i = 0; i < num_peers; i++) {
                 if (i != id)
-                    sendHeartbeatToServer(i);
+                    sendAppendEntriesRequest(i);
             }
+            commitEntry();
             resetHeartbeatTimeout();
         }
     }
@@ -780,17 +781,17 @@ public class RaftNode implements MessageHandling {
         LogEntries entry = new LogEntries(term, index, command);
         this.state.getLog().append(entry);
 
-        boolean appendRes = appendEntriesToPeersAndCommit();
+        // boolean appendRes = appendEntriesToPeersAndCommit();
 
-        if (appendRes) {
-            System.out.println("Appending to leader and peers succeeds");
-            System.out.println("Reply index " + state.getLog().lastEntryIndex() + " term: " + term);
-            return new StartReply(state.getLog().lastEntryIndex(), term, true);
-        }
+        // if (appendRes) {
+        //     System.out.println("Appending to leader and peers succeeds");
+        //     System.out.println("Reply index " + state.getLog().lastEntryIndex() + " term: " + term);
+        //     return new StartReply(state.getLog().lastEntryIndex(), term, true);
+        // }
 
-        // append fails, but append is done with best effort
-        // as long as leader sent the append requests, we reply to start
-        System.out.println("Append FAILS!");
+        // // append fails, but append is done with best effort
+        // // as long as leader sent the append requests, we reply to start
+        // System.out.println("Append FAILS!");
         return new StartReply(state.getLog().lastEntryIndex(), term, true);
     }
 
