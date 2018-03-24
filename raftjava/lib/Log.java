@@ -8,37 +8,25 @@ import java.util.ArrayList;
 public class Log {
 
     private ArrayList<LogEntries> logs;
-    private int commitIndex;
-    private int lastApplied;
-
     private int lastIndex = 0;
-    private int firstIndex = 0;
-
 
     public Log() {
         logs = new ArrayList<>();
-        // placeholder for 0 index, so we don't need to convert
+        // placeholder for 0 index, so we don't need to convert index
         // when accessing the log
         logs.add(null);
-        commitIndex = -1;
-        lastApplied = -1;
     }
 
 
-    public synchronized void setCommitIndex(int val) {this.commitIndex = val;}
-    public synchronized void setLastApplied(int val) {this.lastApplied = val;}
-    public synchronized int getCommitIndex() {return commitIndex;}
-    public synchronized int getLastApplied() {return lastApplied;}
-
     public void dumpEntries() {
         synchronized(logs) {
-            System.out.println("========================================");
+            System.err.println("========================================");
             for (int i = 0; i < logs.size(); i++) {
                 if (i > 0)
-                    System.out.println("Log Entry " + i + " contains " + 
+                    System.err.println("Log Entry " + i + " contains " + 
                         logs.get(i).getCommand() + " with term: " + logs.get(i).getTerm());
             }
-            System.out.println("========================================");
+            System.err.println("========================================");
         }
     }
     // returns the last log index
@@ -60,15 +48,7 @@ public class Log {
         } else return -1;
     }
 
-    // updates committed index
-    public synchronized void updateCommitIndex(int index) {
-        if (index > this.commitIndex) {
-            this.commitIndex = (index < this.lastEntryIndex()? index : this.lastEntryIndex());
-        }
-    }
-
     public synchronized void deleteConflictingEntries(int index) {
-        if(index < commitIndex) return;
         while (index <= lastIndex) {
             this.logs.remove(lastIndex);
             lastIndex--;
@@ -80,7 +60,6 @@ public class Log {
         assert entry != null;
         // check if the entry is already in our log
         if (entry.getIndex() <= lastIndex) {
-            //assert entry.index >= commitIndex : entry.index + " >= " + commitIndex;
             if (entry.getTerm() != logs.get(entry.getIndex()).getTerm()) {
                 deleteConflictingEntries(entry.getIndex());
             } else {
@@ -114,7 +93,7 @@ public class Log {
     }
 
     public synchronized int getLastTerm() {
-        // System.out.print("Current index:" + this.lastEntryIndex());
+        // System.err.print("Current index:" + this.lastEntryIndex());
         if(lastEntryIndex() <= 0) return 0;
         return getEntry(lastIndex).getTerm();
     }

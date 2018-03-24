@@ -17,12 +17,13 @@ public class LogEntries implements Serializable{
         this.command = command;
     }
 
-    public int getTerm() {return this.term;}
-    public int getIndex() {return  this.index;}
-    public int getCommand() {return this.command;}
+    // thread-safe access
+    public synchronized int getTerm() {return this.term;}
+    public synchronized int getIndex() {return  this.index;}
+    public synchronized int getCommand() {return this.command;}
 
-    public void setTerm(int term) {this.term = term;}
-    public void setIndex(int index) {this.index = index;}
-    public void setCommand(int command) {this.command = command;}
+    public synchronized void setTerm(int term) {this.term = term;}
+    public synchronized void setIndex(int index) {this.index = index;}
+    public synchronized void setCommand(int command) {this.command = command;}
 
 }
