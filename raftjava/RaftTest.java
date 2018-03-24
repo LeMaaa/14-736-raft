@@ -14,7 +14,6 @@ public class RaftTest {
 
     private static void TestInitialElection() throws Exception {
 
-        System.out.println( "Trying to test initial election...");
         int term1, term2;
         int numServers = 3;
 
@@ -29,14 +28,10 @@ public class RaftTest {
         cfg.checkOneLeader();
 
         term1 = cfg.checkTerms();
-
-        System.out.println("\n term 1 is: " + term1 + "\n");
        
         Thread.sleep( 2 * RAFT_ELECTION_TIMEOUT );
 
         term2 = cfg.checkTerms();
-
-        System.out.println("\n term 2 is: " + term2 + "\n");
 
         if( term1 != term2 ) {
             System.err.println( "Warning : Term changed without any failures. \n" );
@@ -146,11 +141,11 @@ public class RaftTest {
         cfg.startCommit(101, numServers);
 
         // Follower disconnection
-        System.out.println("\n Checking one leader \n");
+        System.out.println("Checking one leader\n");
         leader = cfg.checkOneLeader();
         cfg.disconnect( (leader + 1) % numServers );
 
-        System.out.println("\n Checking agreement with one disconnected server \n");
+        System.out.println("Checking agreement with one disconnected server");
         // agree when one server is down
         cfg.startCommit(102, numServers - 1);
         cfg.startCommit(103, numServers - 1);
@@ -160,7 +155,7 @@ public class RaftTest {
 
         //reconnect
         cfg.connect((leader + 1) % numServers);
-        System.out.println("\n Checking with reconnected server \n");
+        System.out.println("Checking with reconnected server");
         cfg.startCommit(106, numServers);
         Thread.sleep( RAFT_ELECTION_TIMEOUT );
         cfg.startCommit(107, numServers);
@@ -299,55 +294,35 @@ public class RaftTest {
 
         cfg.startCommit(109, numServers);
 
-        // all servers contain 109 commit
-
-        System.out.println("\n First commit done \n");
         // put leader and one follower in a partition
         leader = cfg.checkOneLeader();
         cfg.disconnect( (leader + 2) % numServers );
         cfg.disconnect( (leader + 3) % numServers );
         cfg.disconnect( (leader + 4) % numServers );
 
-        System.out.println("\n only two nodes now \n");
-
-
         // submit lots of commands that won't commit
         for(i = 0; i < 50; i ++) {
             cfg.start(leader, 110 + i);
         }
-
-        // leader has 110 to 159 that won't commit
     
-        System.out.println("\n leader commit done \n");
 
         Thread.sleep( RAFT_ELECTION_TIMEOUT / 2);
 
         cfg.disconnect( (leader + 0) % numServers );
         cfg.disconnect( (leader + 1) % numServers );
 
-        // leader 0 and 1 have 110 - 159 which shouldn't be committed
-
         // allow other partition to recover
         cfg.connect( (leader + 2) % numServers );
         cfg.connect( (leader + 3) % numServers );
         cfg.connect( (leader + 4) % numServers );
-
-        System.out.println("\n other three nodes back up \n");
 
         // lots of successful commands to new group.
         for(i = 0; i < 50; i ++) {
             cfg.startCommit(160 + i, 3);
         }
 
-        // 160 - 209 should be commited in leader + 2 to leader + 4 cluster
-
-        System.out.println("\n finish commit \n");
-
         // now another partitioned leader and one follower
         leader2 = cfg.checkOneLeader();
-
-        System.out.println("\n found new leader \n");
-
         other = (leader + 2) % numServers;
         if(leader2 == other) {
             other = (leader2 + 1) % numServers;
@@ -355,49 +330,26 @@ public class RaftTest {
 
         cfg.disconnect(other);
 
-        // disconnect one from this group
-
-        System.out.println("\n disconnect other \n");
-
-
         // lots more commands that wont get committed
         for(i = 0; i < 50; i ++) {
             cfg.start(leader2, 210 + i);
         }
 
-        // 210 to 259 shouldn't be commited in this group
-
-
-        System.out.println("\n more commits done \n");
-
         Thread.sleep( RAFT_ELECTION_TIMEOUT / 2);
-
 
         // bring original leader back to life
         for(i = 0; i < numServers; i++) {
             cfg.disconnect(i);
         }
-        // leader + 0 and leader + 1 contain 109 to 159,
-        // in which 110 to 159 are not commited
-        // other contains 109, 160 to 209, which are ocmmited
-
-        // other should be leader, and overwrite stale logs in other two
 
         cfg.connect((leader + 0) % numServers);
         cfg.connect((leader + 1) % numServers);
         cfg.connect(other);
 
-        System.out.println("\n reconnect three \n");
-
-
         // lots of successful commands
         for(i = 0; i < 50; i ++) {
             cfg.startCommit(260 + i, 3);
         }
-
-        System.out.println("\n more more commits done \n");
-
-        System.out.println("\n connect everyone \n");
 
         // now everyone
         for(i = 0; i < numServers; i++) {
@@ -463,7 +415,6 @@ public class RaftTest {
 
                 if( !startReply1.isLeader ) {
                     // leader moved on too quickly
-                    System.out.println("Leader change 1");
                     continue;
                 }
 
@@ -479,13 +430,11 @@ public class RaftTest {
 
                     if( startReply2.term != startReply1.term) {
                         // Term changed while starting.
-                        System.out.println("Leader change 2");
                         continue loop;
                     }
 
                     if( !startReply2.isLeader ) {
                         // No longer leader, so term has changed.
-                        System.out.println("Leader change 3");
                         continue loop;
                     }
 
@@ -501,8 +450,6 @@ public class RaftTest {
 
                         if( cmd == -1) {
                             // term changed -- try again
-                            System.out.println("Term changed, try again");
-
                             continue loop;
                         }
 
@@ -522,10 +469,6 @@ public class RaftTest {
                         if( reply.term != startReply1.term) {
                             // term changed -- can't expect low RPC counts
                             // need to keep going to update total2
-                            System.out.println(reply.term);
-                            System.out.println(startReply1.term);
-                            System.out.println("Term changed 2, try again");
-
                             failed = true;
                         }
                     }
@@ -537,10 +480,6 @@ public class RaftTest {
                     continue loop;
                 }
 
-                int currentRPCCount = total2 - total1;
-
-                System.out.println("Expected RPC count " + ((iters+4)*3));
-                System.out.println("Current RPC count " + currentRPCCount );
                 if( (total2 - total1) > ((iters + 4)*3)) {
                     System.err.println("Too many RPCs");
                     cfg.cleanup();

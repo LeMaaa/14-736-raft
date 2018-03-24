@@ -66,8 +66,6 @@ public class Config extends UnicastRemoteObject implements Remote {
 
         for( int i = 0; i < this.numServers; i++ ) {
             Map<Integer, Integer> serverLog = this.logs.get(i);
-            if (serverLog == null)
-                System.out.println("Server log is null for server " + i);
             if( serverLog.containsKey(index) ) {
 
                 int cmd1 = serverLog.get(index);
@@ -83,9 +81,6 @@ public class Config extends UnicastRemoteObject implements Remote {
 
         reply.nd = count;
         reply.cmd = cmd;
-
-        // System.out.println("Commited count: " + count);
-        // System.out.println("Commited command: " + cmd);
         return reply;
     }
 
@@ -137,7 +132,6 @@ public class Config extends UnicastRemoteObject implements Remote {
 
     /* Attach server "whichServer" to this config's network. */
     public void connect( int whichServer ) throws RemoteException{
-        System.out.println("Connectin to " + whichServer);
         this.connected[whichServer] = true;
         transportLayerCtrl.re_connect(whichServer);
     }
@@ -156,7 +150,6 @@ public class Config extends UnicastRemoteObject implements Remote {
         int lastTermWithLeader = 0;
 
         for( iteration = 0; iteration < 10; iteration++ ) {
-
             try {
                 Thread.sleep(500);
             } catch (InterruptedException e) {
@@ -171,12 +164,8 @@ public class Config extends UnicastRemoteObject implements Remote {
                     break;
                 }
                 if (this.connected[i]) {
-                    // System.out.println("Node " + i + " is connected.");
-
                     GetStateReply state = transportLayerCtrl.getState(i);
                     if( state == null ) {
-                        // System.out.println("state of node unregistered");
-
                         /* Seems like some raft peer has not yet registered itself with the controller. */
                         continue;
                     }
@@ -215,7 +204,6 @@ public class Config extends UnicastRemoteObject implements Remote {
 
             if( leaders.size() != 0 ) {
                 List<Integer> leadersPerTerm = leaders.get( lastTermWithLeader );
-                System.out.println("Leader this term is: " + leadersPerTerm.get(0));
                 return leadersPerTerm.get(0);
             }
         }
@@ -239,7 +227,6 @@ public class Config extends UnicastRemoteObject implements Remote {
                 if( term == -1 ) {
                     term = xterm.term;
                 } else if( term != xterm.term ) {
-                    System.out.println("Agreed term: " + term + " Server term: " + xterm.term );
                     System.err.println("Servers do not agree on term. Exiting!");
                     cleanup();
                 }
@@ -283,8 +270,7 @@ public class Config extends UnicastRemoteObject implements Remote {
                         System.err.println( "Error in executing start commit rpc on " + si );
                         cleanup();
                     }
-                    if( reply.isLeader ) {
-                        System.out.println( "Got Reply index: " + reply.index + " term: " + reply.term);
+                    if( reply.isLeader) {
                         index = reply.index;
                         break;
                     }
@@ -297,7 +283,6 @@ public class Config extends UnicastRemoteObject implements Remote {
                 while( (System.currentTimeMillis() - t1 ) < 2000 ) { /* Wait for 2 seconds before giving up. */
 
                     NCommitted reply = this.nCommitted(index);
-                    // System.out.println("Received committed cmd: " + reply.cmd + " with count: " + reply.nd);
                     if( (reply.nd > 0) && (reply.nd >= expectedServers) ) {
                         if( reply.cmd == cmd) {
                             /* It is the command that we submitted. */
@@ -337,8 +322,6 @@ public class Config extends UnicastRemoteObject implements Remote {
             /* Wait until you receive a apply message from a raft peer. */
             try {
                applyMsg  = applyMsgsQ.take();
-               System.out.println("Received apply message from node " + applyMsg.nodeID + " index: " + applyMsg.index
-                    + " command: " + applyMsg.command);
             } catch (InterruptedException e) {
                 e.printStackTrace();
                 System.err.println( "Listening on raft peer interrupted !");
@@ -369,8 +352,7 @@ public class Config extends UnicastRemoteObject implements Remote {
             }
 
             logPerServer.put( applyMsg.index, applyMsg.command);
-            System.out.println("Added applyMsg for node  " + applyMsg.nodeID + " index: " + applyMsg.index
-                    + " command: " + logPerServer.get(applyMsg.index));
+
 
             if( (applyMsg.index > 1) && (previousOk == false)) {
                 errString =  String.format("server %d apply out of order %d", me, applyMsg.index);
