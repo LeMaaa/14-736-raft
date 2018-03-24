@@ -159,26 +159,38 @@ public class RaftNode implements MessageHandling {
         // also update the current leader
 
         // reset election timeout anyways
-        resetElectionTimeout();
+        // resetElectionTimeout();
 
         if ((appendEntriesArg.getTerm() > state.getCurrentTerm())) {
-            if (getType() != Types.FOLLOWER)
-                this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
-            else {
-                // still let's update current term
-                this.state.setCurrentTerm(appendEntriesArg.getTerm());
-            }
+            this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
+        }
+
+        // if (getType() == Types.CANDIDATE) {
+        //     this.toFollower(appendEntriesArg.getTerm(), appendEntriesArg.getLeaderId());
+        // }
+
+        if (appendEntriesArg.getLeaderId() != getLeaderId()) {
+            System.out.println("Node " + id + " says Not my leader!!!");
+            System.out.println(appendEntriesArg.getLeaderId() + " " + getLeaderId());
+            return new AppendEntriesReply(this.state.getCurrentTerm(), false);
+        } else {
+            resetElectionTimeout();
         }
 
         // if this is a heartbeat, simply reply success
-        if (appendEntriesArg.getEntries() == null && appendEntriesArg.getPrevLogIndex() == -1 
-            && appendEntriesArg.getPrevLogTerm() == -1) {
-            // System.out.println("Received heartbeat, reply true");
-            // set leader
-            // setLeaderId(appendEntriesArg.getLeaderId());
-            return new AppendEntriesReply(this.state.getCurrentTerm(), true);
-        }
+        // if (appendEntriesArg.getEntries() == null && appendEntriesArg.getPrevLogIndex() == -1 
+        //     && appendEntriesArg.getPrevLogTerm() == -1) {
+        //     // System.out.println("Received heartbeat, reply true");
+        //     // set leader
+        //     // setLeaderId(appendEntriesArg.getLeaderId());
+        //     return new AppendEntriesReply(this.state.getCurrentTerm(), true);
+        // }
 
+        // if (appendEntriesArg.getLeaderId() != getLeaderId()) {
+        //     // not my leader
+        //     // bye bye I am not listening to you
+        //     return new AppendEntriesReply(this.state.getCurrentTerm(), false);
+        // }
  
         // append log to log entries
 
@@ -219,7 +231,7 @@ public class RaftNode implements MessageHandling {
 
             // it should have all the log entries server has now
             // so it should be safe to apply
-            if (appendEntriesArg.getLeaderCommit() > commitIndex) {
+            if (appendEntriesArg.getLeaderCommit() > commitIndex && appendEntriesArg.getLeaderCommit() <= state.getLog().lastEntryIndex()) {
                 int newCommitIndex = appendEntriesArg.getLeaderCommit();
                 try {
                     applyTillNewCommitIndex(commitIndex, newCommitIndex);
@@ -464,11 +476,13 @@ public class RaftNode implements MessageHandling {
         // empty entries
         // will not update logs
 
+        int prevLogIndex = Math.max(nextIndex.get(serverId)-1, 0);
+        int prevLogTerm = state.getLog().getEntry(prevLogIndex) == null ? 1 : state.getLog().getEntry(prevLogIndex).getTerm();
         // build append entries argument
         // current term, leaderId, prevLogIndex, prevTerm, entries, commitIndex
         // be careful with the messages...
         AppendEntriesArg args = new AppendEntriesArg(this.state.getCurrentTerm(),
-                this.id, -1, -1, null, getCommitIndex());
+                this.id, prevLogIndex, prevLogTerm, null, getCommitIndex());
 
         Message msg = new Message(MessageType.AppendEntriesArg, id, serverId, SerializationUtils.toByteArray(args));
 
@@ -508,7 +522,7 @@ public class RaftNode implements MessageHandling {
                 if(this.state.getLog().lastEntryIndex() >= nextIndex.get(serverId)) {
                     entries = state.getLog().getEntryFrom(nextIndex.get(serverId));
                 } else {
-                    // updated, don't need to send
+
                     return false;
                 }
 
@@ -615,7 +629,8 @@ public class RaftNode implements MessageHandling {
         if (count > num_peers/2) {
             try {
                 if (!commitEntry()) {
-                    // cannot commit
+                    // cannot commit to local
+                    // don't try to commit peers
                     return false;
                 }
             } catch (RemoteException r) {
@@ -623,6 +638,20 @@ public class RaftNode implements MessageHandling {
                 System.out.println("Commit fails");
                 return false;
             }
+
+            System.out.println("Appending entries to peers succeeds");
+            // need to send again to make peers commit
+            resetHeartbeatTimeout();
+            for(int i = 0; i < num_peers; i++) {
+                if(i == id) continue;
+                try {
+                    sendAppendEntriesRequest(i);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            resetHeartbeatTimeout();
+
 
             return true;
         }
@@ -666,17 +695,17 @@ public class RaftNode implements MessageHandling {
 
         applyTillNewCommitIndex(commitIndex, newCommitIndex);
 
-        // need to send again to make peers commit
-        resetHeartbeatTimeout();
-        for(int i = 0; i < num_peers; i++) {
-            if(i == id) continue;
-            try {
-                sendAppendEntriesRequest(i);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        resetHeartbeatTimeout();
+        // // need to send again to make peers commit
+        // resetHeartbeatTimeout();
+        // for(int i = 0; i < num_peers; i++) {
+        //     if(i == id) continue;
+        //     try {
+        //         sendAppendEntriesRequest(i);
+        //     } catch (Exception e) {
+        //         e.printStackTrace();
+        //     }
+        // }
+        // resetHeartbeatTimeout();
 
         return true;
     }
