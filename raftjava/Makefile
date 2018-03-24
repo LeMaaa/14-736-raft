@@ -1,7 +1,7 @@
 all:
 ifeq ($(OS),Windows_NT)
 	# assume windows
-	javac -Xlint -g *.java
+	javac -Xlint -g -cp ".:org-apache-commons-lang.jar:" *.java
 else
 	# assume Linux
 	javac -Xlint -g -cp ".:org-apache-commons-lang.jar:" *.java
